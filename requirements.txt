@@ -1,5 +1,6 @@
 numpy>=2.0
 pandas>=2.2
+tabulate>=0.9
 scikit-learn>=1.5
 lightgbm>=4.3
 shap>=0.46
