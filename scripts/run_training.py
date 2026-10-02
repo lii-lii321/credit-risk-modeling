@@ -18,8 +18,13 @@ import joblib
 import lightgbm
 import numpy as np
 import pandas as pd
-import shap
 import sklearn
+
+try:  # shap 为可选依赖：不可用时训练入口照常运行，
+    # 全局重要性自动降级为 permutation importance（与 explain.SHAP_AVAILABLE 同源判断）
+    import shap
+except Exception:  # noqa: BLE001
+    shap = None
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -123,8 +128,13 @@ def main() -> None:
     plt.close(fig)
 
     example_row = X_test.iloc[[0]]
-    local = explain_instance(pipeline, example_row, top_k=3)
-    log(f"部署模型单样本解释示例（真实 y={int(y_test.iloc[0])}, PD={test_proba[0]:.3f}）：{local}")
+    try:
+        local = explain_instance(pipeline, example_row, top_k=3)
+        log(f"部署模型单样本解释示例（真实 y={int(y_test.iloc[0])}, PD={test_proba[0]:.3f}）：{local}")
+    except ValueError as exc:
+        # 部署模型为树模型且 shap 不可用时，单样本解释明确不可得（不静默降级到错误方法）
+        local = None
+        log(f"提示：部署模型单样本解释不可用（{exc}）")
 
     # ------------------------------------------------------- artifacts
     metrics_payload = {
@@ -137,7 +147,10 @@ def main() -> None:
         "selected": {"model": best_model, "strategy": best_strategy},
         "final_test_metrics": final_metrics,
         "global_importance_method": shap_method,
-        "deployed_model_local_explanation": "shap" if best_model == "lightgbm" else "coef_x_woe_deviation",
+        "deployed_model_local_explanation": (
+            ("shap" if best_model == "lightgbm" else "coef_x_woe_deviation")
+            if local is not None else "unavailable"
+        ),
         "local_example": {
             "pd": float(test_proba[0]),
             "y_true": int(y_test.iloc[0]),
@@ -164,7 +177,7 @@ def main() -> None:
         "library_versions": {
             "scikit-learn": sklearn.__version__,
             "lightgbm": lightgbm.__version__,
-            "shap": shap.__version__ if SHAP_AVAILABLE else None,
+            "shap": shap.__version__ if (SHAP_AVAILABLE and shap is not None) else None,
             "pandas": pd.__version__,
             "numpy": np.__version__,
             "python": sys.version.split()[0],
@@ -236,7 +249,7 @@ def main() -> None:
         "",
         "## 单样本解释示例（测试集第 1 条）",
         "",
-        f"部署模型（{best_model}）归因方法：`{'shap' if best_model == 'lightgbm' else 'coef_x_woe_deviation'}`",
+        f"部署模型（{best_model}）归因方法：`{metrics_payload['deployed_model_local_explanation']}`",
         "",
         f"```json\n{json.dumps({'pd': float(test_proba[0]), 'y_true': int(y_test.iloc[0]), 'top_features': local}, ensure_ascii=False, indent=2)}\n```",
         "",

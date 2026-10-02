@@ -134,7 +134,7 @@
     "bad_rate": 0.3
   },
   "global_importance_method": "shap_mean_abs(lightgbm+weight)",
-  "trained_at": "2026-10-02 17:51:02",
+  "trained_at": "2026-10-02 22:46:06",
   "library_versions": {
     "scikit-learn": "1.7.2",
     "lightgbm": "4.6.0",
