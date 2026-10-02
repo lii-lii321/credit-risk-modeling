@@ -5,6 +5,7 @@ lightgbm>=4.3
 shap>=0.46
 imbalanced-learn>=0.12
 matplotlib>=3.8
+seaborn>=0.13
 fastapi>=0.110
 uvicorn>=0.29
 pydantic>=2.7
