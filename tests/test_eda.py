@@ -54,11 +54,12 @@ def test_eda_max_abs_corr_matches_independent_computation(tmp_path):
     df = _tiny_credit_df(n=80, seed=2)
     stats = run_eda(df, tmp_path)
     corr_matrix = df[NUM_FEATURES].corr().abs()
-    corr_values = corr_matrix.to_numpy()
+    corr_values = corr_matrix.to_numpy(copy=True)  # CI 的 numpy 下默认视图只读
     np.fill_diagonal(corr_values, 0)  # 与实现一致：排除自相关
     assert stats["max_abs_corr"] == corr_values.max()
+    zeroed = pd.DataFrame(corr_values, index=corr_matrix.index, columns=corr_matrix.columns)
     assert stats["top_corr_pair"] == list(
-        corr_matrix.stack().sort_values(ascending=False).index[0]
+        zeroed.stack().sort_values(ascending=False).index[0]
     )
 
 

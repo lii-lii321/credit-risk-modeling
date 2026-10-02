@@ -122,11 +122,12 @@ def run_eda(df: pd.DataFrame, out_dir: Optional[Path] = None) -> dict:
         "total_missing": int(X.isna().sum().sum()),
     }
     corr_matrix = X[NUM_FEATURES].corr().abs()
-    np.fill_diagonal(corr_matrix.to_numpy(), 0)
-    stats["max_abs_corr"] = float(corr_matrix.to_numpy().max())
-    top_corr_pair = (
-        corr_matrix.stack().sort_values(ascending=False).index[0]
-    )
+    # 新版 pandas/numpy 下 to_numpy() 可能返回只读视图，必须在副本上置零对角
+    corr_values = corr_matrix.to_numpy(copy=True)
+    np.fill_diagonal(corr_values, 0)
+    stats["max_abs_corr"] = float(corr_values.max())
+    zeroed = pd.DataFrame(corr_values, index=corr_matrix.index, columns=corr_matrix.columns)
+    top_corr_pair = zeroed.stack().sort_values(ascending=False).index[0]
     stats["top_corr_pair"] = list(top_corr_pair)
 
     n_bad = int(round(stats["bad_rate"] * stats["n_rows"]))
