@@ -1,0 +1,167 @@
+# credit-risk-modeling
+
+端到端信贷违约风险建模：**问题 → 数据 → 实验 → 解释 → 部署** 的科研式完整链路。
+
+以公开的 [OpenML credit-g（Statlog German Credit）](https://www.openml.org/d/31) 数据集为载体，
+回答一个业务问题：**给定申请人的 20 维画像，预测其违约概率（PD），并给出可审计的解释**。
+包含自实现的 WOE/IV 编码、KS/PSI 指标、2 模型 × 3 不平衡策略实验矩阵、
+SHAP 可解释性与 FastAPI 评分服务。
+
+![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Tests](https://img.shields.io/badge/pytest-64%20passed-brightgreen)
+
+---
+
+## 架构
+
+```mermaid
+flowchart LR
+    A[问题定义<br/>违约概率 PD + 可解释性] --> B[数据层<br/>fetch_openml credit-g<br/>本地缓存 / 合成降级]
+    B --> C[EDA<br/>分布 / 缺失 / 相关性图表]
+    C --> D[特征工程<br/>自实现 WOE/IV 编码<br/>评分卡式分箱]
+    D --> E[实验矩阵<br/>LR vs LightGBM<br/>none / weight / SMOTE<br/>5 折 CV：AUC + KS]
+    E --> F[可解释性<br/>SHAP 全局 + 单样本<br/>coef×WOE 线性归因]
+    E --> G[稳定性<br/>自实现 PSI<br/>train vs test + 漂移注入]
+    F --> H[部署<br/>FastAPI /score<br/>PD + 风险分档 + top 特征解释]
+    G --> H
+```
+
+## 快速开始
+
+```bash
+# 1. 安装依赖（系统 Python ≥ 3.10）
+pip install -r requirements.txt
+
+# 2. 复现实验（拉取数据 → 全部实验 → 产物与报告；已提交的结果可跳过）
+python scripts/run_eda.py
+python scripts/run_training.py
+
+# 3. 全量测试（64 个）
+python -m pytest tests
+
+# 4. 启动评分服务
+uvicorn app.main:app --port 8000
+
+# 5. 评分示例
+curl -X POST http://127.0.0.1:8000/score -H "Content-Type: application/json" -d '{
+  "checking_status": "<0", "duration": 48, "credit_history": "delayed previously",
+  "purpose": "new car", "credit_amount": 12000, "savings_status": "<100",
+  "employment": "unemployed", "installment_commitment": 4,
+  "personal_status": "male single", "other_parties": "none",
+  "residence_since": 1, "property_magnitude": "no known property",
+  "age": 22, "other_payment_plans": "bank", "housing": "rent",
+  "existing_credits": 4, "job": "unskilled resident", "num_dependents": 2,
+  "own_telephone": "none", "foreign_worker": "yes"
+}'
+```
+
+## Model Card
+
+### 模型与训练数据
+
+| 项 | 值 |
+|---|---|
+| 训练数据 | OpenML credit-g v1，1000 行 × 20 特征，公开学术数据 |
+| 目标定义 | `class: bad→1（违约）`，正类 = 违约；坏样本率 30.0% |
+| 切分 | 分层 train/test = 800/200（seed=42），CV 为 5 折分层 |
+| 特征处理 | 自实现 WOE 分位数分箱编码（加法平滑 α=0.5，缺失/未见值映射中性 0） |
+| 部署模型 | **LogisticRegression + class_weight="balanced"**（版本 1.0.0） |
+| 训练环境 | Python 3.10.9 / scikit-learn 1.7.2 / LightGBM 4.6.0 / SHAP 0.49.1 |
+
+### 真实评估指标（scripts/run_training.py 实跑产出，见 artifacts/metrics.json）
+
+**部署模型（logistic_regression + weight）独立测试集（n=200）：**
+
+| AUC | KS | Gini |
+|---|---|---|
+| **0.8013** | **0.5119** | **0.6026** |
+
+CV AUC = 0.7836 ± 0.0475，CV KS = 0.4935 ± 0.0642。
+
+**2 模型 × 3 不平衡策略实验矩阵**（按 CV AUC 排序，完整数据见 [reports/model_comparison.csv](reports/model_comparison.csv)）：
+
+| model | strategy | CV AUC | CV KS | test AUC | test KS |
+|---|---|---|---|---|---|
+| logistic_regression | weight | 0.7836 | 0.4935 | **0.8013** | 0.5119 |
+| logistic_regression | smote | 0.7824 | 0.4976 | 0.8004 | 0.5143 |
+| logistic_regression | none | 0.7823 | 0.4994 | 0.8004 | 0.5238 |
+| lightgbm | none | 0.7468 | 0.4196 | 0.7711 | 0.4286 |
+| lightgbm | weight | 0.7462 | 0.4065 | 0.7775 | 0.4738 |
+| lightgbm | smote | 0.7453 | 0.4119 | 0.7617 | 0.4452 |
+
+**类不平衡结论**：credit-g 坏样本率约 30%，不平衡程度温和。同一模型下 weight 与 SMOTE 的
+CV AUC 差距仅 0.0012（LR）/ 0.0009（LightGBM），SMOTE 未带来可辨识收益；
+样本加权以更低复杂度、更小的线上副作用（无需重采样）达到同等效果，故部署默认 weight。
+若业务场景坏样本率 <5%，该结论需要重新实验。
+
+### 可解释性
+
+- **全局重要性**：SHAP（TreeExplainer，LightGBM+weight 上计算）mean(|SHAP|)。
+  Top 3：`checking_status`、`duration`、`purpose`（完整表见 [reports/shap_global_importance.csv](reports/shap_global_importance.csv)）。
+  本环境 SHAP 可用，**未触发降级**；若环境缺失 shap，代码自动降级为 permutation importance 并在产物中如实标记方法名。
+- **单样本解释**：部署模型为逻辑回归，采用 `coef_i × (x_woe_i − mean_woe_i)` 归因
+  （方法名 `coef_x_woe_deviation`）；LightGBM 路径走 Tree SHAP。两口径在训练报告中并排对照。
+- **WOE/IV**：`checking_status` IV=0.609（>0.5 标记 suspicious，提示潜在信息泄漏式强变量，评分卡实务中需人工复核）、
+  `duration` IV=0.293、`credit_history` IV=0.262（完整表见 [reports/iv_table.csv](reports/iv_table.csv)）。
+
+### 稳定性（自实现 PSI）
+
+- train vs test：20 特征最大 PSI **0.0727** → 全部 <0.1，同分布切分符合预期；
+- 漂移注入对照（age+15 / credit_amount×1.5 / duration+12）：对应特征 PSI 升至
+  **4.24 / 3.14 / 0.50**，验证 PSI 实现确实能检出漂移（见 [reports/stability_report.md](reports/stability_report.md)）。
+
+### 评分服务契约
+
+- `POST /score`：20 特征 JSON（Pydantic v2 强校验：类别取值白名单，非法值 422；
+  数值不硬拒，WOE 越界裁剪到边界箱）→
+  `{probability_of_default, risk_band, top_features[3], model_version, model, explanation_method}`；
+- 风险分档阈值取测试集 PD 的 60%/85% 分位：low < 0.506 ≤ medium < 0.792 ≤ high；
+- `GET /health`：版本与训练时间。API 测试 9 个（tests/test_api.py）。
+
+## 项目结构
+
+```
+credit-risk-modeling/
+├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / models / explain / eda
+├── app/                   # FastAPI 服务（schemas + main）
+├── scripts/               # run_eda.py / run_training.py / 检查脚本
+├── tests/                 # 64 个 pytest（单元 + API 契约）
+├── artifacts/             # pipeline.joblib + model_meta.json + metrics.json（随仓库提交）
+├── reports/               # EDA/训练/稳定性报告与图表（随仓库提交）
+├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
+└── .github/workflows/ci.yml
+```
+
+## 复现性说明
+
+- 数据缓存 `data/raw/credit-g.csv` 与模型产物 `artifacts/`、报告 `reports/` 均随仓库提交；
+  断网环境下 `pytest` 与 `uvicorn` 仍可直接运行；
+- 从零重跑：删除 `data/raw/credit-g.csv` 后执行 `python scripts/run_training.py`，
+  将重新拉取 OpenML；**若拉取失败会自动降级为 schema 一致的合成数据**，
+  日志会显式警告，且 metrics.json 的 `data_source` 字段会变为 `synthetic_fallback`
+  （当前仓库中的指标均为真实 credit-g 数据产出）；
+- 全部随机过程固定 seed=42，实验矩阵可精确复现。
+
+## 已知限制
+
+1. **数据规模与年代**：credit-g 仅 1000 条、20 特征，且为 1990 年代德国信贷档案数据；
+   指标不能外推到现代信贷组合，仅用于方法链路演示。
+2. **合规视角未完成**：真实信贷建模需排除或约束受保护属性（gender 经 `personal_status`
+   编码于特征中）并做公平性审计（如 demographic parity / equal opportunity）。
+   本项目在报告中指出但**未实现**公平性约束，不建议直接用于任何真实决策。
+3. **AUC ≈ 0.80 的天花板**：与公开基准一致，credit-g 信息量有限；未做超参搜索
+   （LightGBM 用固定参数），深度调参可能再提升 1-2 个点，非本项目重点。
+4. **单样本解释的两套口径**：部署模型（LR）归因是 coef×WOE 偏移，全局重要性是 LightGBM
+   的 SHAP——两者模型不同，不能直接逐特征对比；训练报告中已并排列出供读者自判。
+5. **PSI 分箱依赖训练分布**：等频分箱边界来自 expected 数据；上线后需定期用新数据重估，
+   且 PSI 对样本量敏感（每箱 <100 样本时读数不稳定）。
+6. **API 无认证与限流**：评分服务为演示用途，生产部署需加鉴权、限流与审计日志；
+   `joblib.load` 仅加载本仓库训练脚本产出的第一方产物，生产应改用带签名的模型注册中心。
+7. **SHAP 输出版本敏感**：不同 shap 版本对二分类 TreeExplainer 的返回结构不同，
+   `explain.py` 已做多版本兼容分支，但升级 shap 大版本后需回归 `tests/test_explain.py`。
+
+## License
+
+[MIT](LICENSE)

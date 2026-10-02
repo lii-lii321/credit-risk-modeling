@@ -7,10 +7,10 @@
 ## 图表
 
 ![target](eda_target_distribution.png)
-![missing](eda_missing.png)
-![numeric](eda_numeric.png)
-![categorical](eda_categorical.png)
-![correlation](eda_correlation.png)
+![missing](eda_missing_dtypes.png)
+![numeric](eda_numeric_distributions.png)
+![categorical](eda_categorical_default_rates.png)
+![correlation](eda_numeric_correlation.png)
 
 ## 观察
 
