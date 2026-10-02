@@ -1,0 +1,21 @@
+model,bin,n,mean_predicted_pd,observed_bad_rate
+logistic_regression+weight (deployed),"[0.010, 0.086)",20,0.04771769917180982,0.0
+logistic_regression+weight (deployed),"[0.086, 0.158)",20,0.12633355346655095,0.15
+logistic_regression+weight (deployed),"[0.158, 0.227)",20,0.19162519578442483,0.1
+logistic_regression+weight (deployed),"[0.227, 0.315)",20,0.27409550677410177,0.25
+logistic_regression+weight (deployed),"[0.315, 0.425)",20,0.3649738649455605,0.05
+logistic_regression+weight (deployed),"[0.425, 0.506)",20,0.46409395914016294,0.2
+logistic_regression+weight (deployed),"[0.506, 0.620)",20,0.5665335673768603,0.4
+logistic_regression+weight (deployed),"[0.620, 0.696)",20,0.6598569228750787,0.5
+logistic_regression+weight (deployed),"[0.696, 0.848)",20,0.7796956013088624,0.6
+logistic_regression+weight (deployed),"[0.848, 0.968)",20,0.8980979221362795,0.75
+logistic_regression+none (reference),"[0.005, 0.042)",20,0.02321493979121742,0.05
+logistic_regression+none (reference),"[0.042, 0.080)",20,0.06457421484492665,0.1
+logistic_regression+none (reference),"[0.080, 0.116)",20,0.09880522678849137,0.15
+logistic_regression+none (reference),"[0.116, 0.170)",20,0.14525956527707512,0.1
+logistic_regression+none (reference),"[0.170, 0.234)",20,0.2028512808514571,0.15
+logistic_regression+none (reference),"[0.234, 0.312)",20,0.27587296402006317,0.15
+logistic_regression+none (reference),"[0.312, 0.408)",20,0.36357915388559925,0.45
+logistic_regression+none (reference),"[0.408, 0.496)",20,0.45429656003206065,0.5
+logistic_regression+none (reference),"[0.496, 0.692)",20,0.6048110829802649,0.6
+logistic_regression+none (reference),"[0.692, 0.919)",20,0.7810212449631955,0.75

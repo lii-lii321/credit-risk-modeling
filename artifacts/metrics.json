@@ -83,6 +83,148 @@
     "n": 200,
     "bad_rate": 0.3
   },
+  "calibration": {
+    "n_bins": 10,
+    "test_n": 200,
+    "deployed": {
+      "model": "logistic_regression+weight (deployed)",
+      "brier": 0.18102244664804076,
+      "ece": 0.142035668604659,
+      "mean_predicted_pd": 0.4373023792979691,
+      "observed_bad_rate": 0.3,
+      "reliability": [
+        {
+          "bin": "[0.010, 0.086)",
+          "n": 20,
+          "mean_predicted_pd": 0.04771769917180982,
+          "observed_bad_rate": 0.0
+        },
+        {
+          "bin": "[0.086, 0.158)",
+          "n": 20,
+          "mean_predicted_pd": 0.12633355346655095,
+          "observed_bad_rate": 0.15
+        },
+        {
+          "bin": "[0.158, 0.227)",
+          "n": 20,
+          "mean_predicted_pd": 0.19162519578442483,
+          "observed_bad_rate": 0.1
+        },
+        {
+          "bin": "[0.227, 0.315)",
+          "n": 20,
+          "mean_predicted_pd": 0.27409550677410177,
+          "observed_bad_rate": 0.25
+        },
+        {
+          "bin": "[0.315, 0.425)",
+          "n": 20,
+          "mean_predicted_pd": 0.3649738649455605,
+          "observed_bad_rate": 0.05
+        },
+        {
+          "bin": "[0.425, 0.506)",
+          "n": 20,
+          "mean_predicted_pd": 0.46409395914016294,
+          "observed_bad_rate": 0.2
+        },
+        {
+          "bin": "[0.506, 0.620)",
+          "n": 20,
+          "mean_predicted_pd": 0.5665335673768603,
+          "observed_bad_rate": 0.4
+        },
+        {
+          "bin": "[0.620, 0.696)",
+          "n": 20,
+          "mean_predicted_pd": 0.6598569228750787,
+          "observed_bad_rate": 0.5
+        },
+        {
+          "bin": "[0.696, 0.848)",
+          "n": 20,
+          "mean_predicted_pd": 0.7796956013088624,
+          "observed_bad_rate": 0.6
+        },
+        {
+          "bin": "[0.848, 0.968)",
+          "n": 20,
+          "mean_predicted_pd": 0.8980979221362795,
+          "observed_bad_rate": 0.75
+        }
+      ]
+    },
+    "reference": {
+      "model": "logistic_regression+none (reference)",
+      "brier": 0.15744014558951325,
+      "ece": 0.050534604274976046,
+      "mean_predicted_pd": 0.3014286233434351,
+      "observed_bad_rate": 0.3,
+      "reliability": [
+        {
+          "bin": "[0.005, 0.042)",
+          "n": 20,
+          "mean_predicted_pd": 0.02321493979121742,
+          "observed_bad_rate": 0.05
+        },
+        {
+          "bin": "[0.042, 0.080)",
+          "n": 20,
+          "mean_predicted_pd": 0.06457421484492665,
+          "observed_bad_rate": 0.1
+        },
+        {
+          "bin": "[0.080, 0.116)",
+          "n": 20,
+          "mean_predicted_pd": 0.09880522678849137,
+          "observed_bad_rate": 0.15
+        },
+        {
+          "bin": "[0.116, 0.170)",
+          "n": 20,
+          "mean_predicted_pd": 0.14525956527707512,
+          "observed_bad_rate": 0.1
+        },
+        {
+          "bin": "[0.170, 0.234)",
+          "n": 20,
+          "mean_predicted_pd": 0.2028512808514571,
+          "observed_bad_rate": 0.15
+        },
+        {
+          "bin": "[0.234, 0.312)",
+          "n": 20,
+          "mean_predicted_pd": 0.27587296402006317,
+          "observed_bad_rate": 0.15
+        },
+        {
+          "bin": "[0.312, 0.408)",
+          "n": 20,
+          "mean_predicted_pd": 0.36357915388559925,
+          "observed_bad_rate": 0.45
+        },
+        {
+          "bin": "[0.408, 0.496)",
+          "n": 20,
+          "mean_predicted_pd": 0.45429656003206065,
+          "observed_bad_rate": 0.5
+        },
+        {
+          "bin": "[0.496, 0.692)",
+          "n": 20,
+          "mean_predicted_pd": 0.6048110829802649,
+          "observed_bad_rate": 0.6
+        },
+        {
+          "bin": "[0.692, 0.919)",
+          "n": 20,
+          "mean_predicted_pd": 0.7810212449631955,
+          "observed_bad_rate": 0.75
+        }
+      ]
+    }
+  },
   "global_importance_method": "shap_mean_abs(lightgbm+weight)",
   "deployed_model_local_explanation": "coef_x_woe_deviation",
   "local_example": {

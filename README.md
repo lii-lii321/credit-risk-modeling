@@ -4,13 +4,13 @@
 
 以公开的 [OpenML credit-g（Statlog German Credit）](https://www.openml.org/d/31) 数据集为载体，
 回答一个业务问题：**给定申请人的 20 维画像，预测其违约概率（PD），并给出可审计的解释**。
-包含自实现的 WOE/IV 编码、KS/PSI 指标、2 模型 × 3 不平衡策略实验矩阵、
+包含自实现的 WOE/IV 编码、KS/PSI/Brier/ECE 指标、2 模型 × 3 不平衡策略实验矩阵、
 SHAP 可解释性与 FastAPI 评分服务。
 
 ![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/pytest-74%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/pytest-85%20passed-brightgreen)
 
 ---
 
@@ -21,7 +21,7 @@ flowchart LR
     A[问题定义<br/>违约概率 PD + 可解释性] --> B[数据层<br/>fetch_openml credit-g<br/>本地缓存 / 合成降级]
     B --> C[EDA<br/>分布 / 缺失 / 相关性图表]
     C --> D[特征工程<br/>自实现 WOE/IV 编码<br/>评分卡式分箱]
-    D --> E[实验矩阵<br/>LR vs LightGBM<br/>none / weight / SMOTE<br/>5 折 CV：AUC + KS]
+    D --> E[实验矩阵<br/>LR vs LightGBM<br/>none / weight / SMOTE<br/>5 折 CV：AUC + KS<br/>校准：Brier / ECE]
     E --> F[可解释性<br/>SHAP 全局 + 单样本<br/>coef×WOE 线性归因]
     E --> G[稳定性<br/>自实现 PSI<br/>train vs test + 漂移注入]
     F --> H[部署<br/>FastAPI /score<br/>PD + 风险分档 + top 特征解释]
@@ -38,7 +38,7 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（74 个）
+# 3. 全量测试（85 个）
 python -m pytest tests
 
 # 4. 启动评分服务
@@ -113,6 +113,24 @@ CV AUC 差距仅 0.0012（LR）/ 0.0009（LightGBM），SMOTE 未带来可辨识
   duration 升至 **3.14**、credit_amount 升至 **0.50**，验证 PSI 实现确实能检出漂移
   （见 [reports/stability_report.md](reports/stability_report.md)）。
 
+### 概率校准（Brier / ECE / 可靠性曲线）
+
+排序指标（AUC/KS）不约束 PD 的绝对值；AUC=0.80 不代表"预测 PD=0.6 的群组真有 60% 违约率"。
+等频 10 桶可靠性分析（独立测试集 n=200，scripts/run_training.py 实跑产出）：
+
+| 模型 | Brier ↓ | ECE ↓ | 平均预测 PD | 实际违约率 |
+|---|---|---|---|---|
+| **部署：LR + weight** | 0.1810 | 0.1420 | 0.437 | 0.300 |
+| 参照：LR + none（不加权） | **0.1574** | **0.0505** | 0.301 | 0.300 |
+
+**结论**：`class_weight="balanced"` 在排序能力几乎不变的前提下（test AUC 0.8013 vs 0.8004），
+把预测 PD 的绝对值系统性抬高约 **+0.137**（ECE 0.142 vs 参照 0.051）——
+部署模型的 PD **不能**直接当作真实违约概率用于定价或资本计算；
+风险分档阈值基于 PD 相对排序，不受此偏移影响。
+可靠性曲线见 [reports/calibration_curve.png](reports/calibration_curve.png)，
+逐桶数据见 [reports/calibration_table.csv](reports/calibration_table.csv)
+（完整表亦写入 reports/training_report.md 与 artifacts/metrics.json 的 `calibration` 字段）。
+
 ### 评分服务契约
 
 - `POST /score`：20 特征 JSON（Pydantic v2 强校验：类别取值白名单，非法值 422；
@@ -125,10 +143,10 @@ CV AUC 差距仅 0.0012（LR）/ 0.0009（LightGBM），SMOTE 未带来可辨识
 
 ```
 credit-risk-modeling/
-├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / models / explain / eda
+├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / models / explain / eda
 ├── app/                   # FastAPI 服务（schemas + main）
 ├── scripts/               # run_eda.py / run_training.py / 检查脚本
-├── tests/                 # 64 个 pytest（单元 + API 契约）
+├── tests/                 # 85 个 pytest（单元 + API 契约）
 ├── artifacts/             # pipeline.joblib + model_meta.json + metrics.json（随仓库提交）
 ├── reports/               # EDA/训练/稳定性报告与图表（随仓库提交）
 ├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
@@ -162,6 +180,11 @@ credit-risk-modeling/
    `joblib.load` 仅加载本仓库训练脚本产出的第一方产物，生产应改用带签名的模型注册中心。
 7. **SHAP 输出版本敏感**：不同 shap 版本对二分类 TreeExplainer 的返回结构不同，
    `explain.py` 已做多版本兼容分支，但升级 shap 大版本后需回归 `tests/test_explain.py`。
+8. **PD 绝对值未做校准修正**：balanced 加权使部署模型预测 PD 系统性偏高
+   （平均 0.437 vs 实际 0.300，ECE 0.142 vs 未加权参照 0.051，见「概率校准」一节）。
+   本项目如实量化了该偏移但**未实现** Platt/isotonic 修正；需要绝对 PD 的场景
+   （定价、拨备、监管资本）应先在验证集上做校准修正，或直接部署未加权模型
+   （排序损失约 0.001 AUC，可自行权衡）。
 
 ## License
 

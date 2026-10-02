@@ -39,6 +39,12 @@ from creditrisk.config import (  # noqa: E402
     RANDOM_STATE,
     TARGET_COL,
 )
+from creditrisk.calibration import (  # noqa: E402
+    brier_score,
+    expected_calibration_error,
+    plot_reliability_diagram,
+    reliability_data,
+)
 from creditrisk.data import load_credit_data  # noqa: E402
 from creditrisk.evaluate import evaluate_predictions  # noqa: E402
 from creditrisk.explain import SHAP_AVAILABLE, explain_instance, global_importance  # noqa: E402
@@ -90,6 +96,50 @@ def main() -> None:
 
     # risk band 阈值：测试集 PD 的 60% / 85% 分位
     t_low, t_high = np.quantile(test_proba, [0.60, 0.85])
+
+    # ------------------------------------------------------- calibration
+    # 排序指标（AUC/KS）不约束 PD 的绝对值；class_weight="balanced" 会系统性抬高
+    # 预测 PD。这里用未加权 LR 作参照量化该副作用：Brier / ECE / 可靠性曲线。
+    ref_pipe = fit_deployable_pipeline(X_train, y_train, "logistic_regression", "none")
+    ref_proba = ref_pipe.predict_proba(X_test)[:, 1]
+    cal_deployed_table = reliability_data(y_test, test_proba, n_bins=10)
+    cal_ref_table = reliability_data(y_test, ref_proba, n_bins=10)
+    deployed_label = f"{best_model}+{best_strategy} (deployed)"
+    reference_label = "logistic_regression+none (reference)"
+    calibration = {
+        "n_bins": 10,
+        "test_n": int(len(y_test)),
+        "deployed": {
+            "model": deployed_label,
+            "brier": brier_score(y_test, test_proba),
+            "ece": expected_calibration_error(y_test, test_proba, n_bins=10),
+            "mean_predicted_pd": float(np.mean(test_proba)),
+            "observed_bad_rate": float(np.mean(y_test)),
+            "reliability": cal_deployed_table.to_dict("records"),
+        },
+        "reference": {
+            "model": reference_label,
+            "brier": brier_score(y_test, ref_proba),
+            "ece": expected_calibration_error(y_test, ref_proba, n_bins=10),
+            "mean_predicted_pd": float(np.mean(ref_proba)),
+            "observed_bad_rate": float(np.mean(y_test)),
+            "reliability": cal_ref_table.to_dict("records"),
+        },
+    }
+    cal_csv = pd.concat([
+        cal_deployed_table.assign(model=deployed_label),
+        cal_ref_table.assign(model=reference_label),
+    ])[["model", "bin", "n", "mean_predicted_pd", "observed_bad_rate"]]
+    cal_csv.to_csv(REPORTS_DIR / "calibration_table.csv", index=False)
+    plot_reliability_diagram(
+        [(deployed_label, y_test, test_proba), (reference_label, y_test, ref_proba)],
+        REPORTS_DIR / "calibration_curve.png",
+        n_bins=10,
+    )
+    log(f"校准：部署模型 Brier={calibration['deployed']['brier']:.4f} "
+        f"ECE={calibration['deployed']['ece']:.4f}，平均预测 PD "
+        f"{calibration['deployed']['mean_predicted_pd']:.3f} vs 实际违约率 "
+        f"{calibration['deployed']['observed_bad_rate']:.3f}")
 
     # ------------------------------------------------------------- IV
     woe = WoEEncoder(n_bins=10).fit(X_train, y_train)
@@ -146,6 +196,7 @@ def main() -> None:
         "experiments": results.to_dict("records"),
         "selected": {"model": best_model, "strategy": best_strategy},
         "final_test_metrics": final_metrics,
+        "calibration": calibration,
         "global_importance_method": shap_method,
         "deployed_model_local_explanation": (
             ("shap" if best_model == "lightgbm" else "coef_x_woe_deviation")
@@ -259,10 +310,55 @@ def main() -> None:
         "",
         f"- 低风险：PD < {t_low:.3f}；中风险：{t_low:.3f} ≤ PD < {t_high:.3f}；高风险：PD ≥ {t_high:.3f}",
         "",
+        "## 概率校准（独立测试集，等频 10 桶）",
+        "",
+        "排序指标（AUC/KS）不约束 PD 的绝对值；下面逐桶对比平均预测 PD 与实际违约率，",
+        "对角线代表完美校准。ECE = 按桶样本量加权的 |平均预测 PD − 实际违约率| 之和。",
+        "",
+        f"### 部署模型（{deployed_label}）",
+        "",
+        cal_deployed_table.to_markdown(index=False),
+        "",
+        f"Brier={calibration['deployed']['brier']:.4f}，ECE={calibration['deployed']['ece']:.4f}，"
+        f"平均预测 PD={calibration['deployed']['mean_predicted_pd']:.3f}，"
+        f"实际违约率={calibration['deployed']['observed_bad_rate']:.3f}",
+        "",
+        f"### 参照（{reference_label}）",
+        "",
+        cal_ref_table.to_markdown(index=False),
+        "",
+        f"Brier={calibration['reference']['brier']:.4f}，ECE={calibration['reference']['ece']:.4f}，"
+        f"平均预测 PD={calibration['reference']['mean_predicted_pd']:.3f}",
+        "",
+        _calibration_conclusion(calibration),
+        "",
+        "![calibration](calibration_curve.png)",
+        "",
     ]
     (REPORTS_DIR / "training_report.md").write_text("\n".join(report), encoding="utf-8")
 
     log(f"完成，用时 {time.time() - started:.1f}s；产物见 artifacts/ 与 reports/")
+
+
+def _calibration_conclusion(calibration: dict) -> str:
+    """按实测数字给出校准结论（数据驱动，不预写方向）。"""
+    dep = calibration["deployed"]
+    ref = calibration["reference"]
+    bias = dep["mean_predicted_pd"] - dep["observed_bad_rate"]
+    if bias > 0.05:
+        direction = "系统性偏高"
+    elif bias < -0.05:
+        direction = "系统性偏低"
+    else:
+        direction = "基本一致"
+    return (
+        f"**结论**：部署模型平均预测 PD {dep['mean_predicted_pd']:.3f} vs 实际违约率 "
+        f"{dep['observed_bad_rate']:.3f}（偏移 {bias:+.3f}）→ PD 绝对值{direction}；"
+        f"参照（未加权 LR）平均预测 PD {ref['mean_predicted_pd']:.3f}，ECE {ref['ece']:.4f} vs "
+        f"部署模型 {dep['ece']:.4f}。balanced 加权改善排序（AUC/KS）但把 PD 绝对值抬高，"
+        f"PD 不能直接当作真实违约概率用于定价或资本计算；风险分档阈值基于 PD 相对排序，"
+        f"不受此偏移影响。如需绝对校准可在验证集上做 Platt/isotonic 修正（本项目未实现）。"
+    )
 
 
 def _imbalance_conclusion(results: pd.DataFrame) -> str:
