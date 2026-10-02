@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+build/
+dist/
+
+# 编辑器
+.vscode/
+.idea/
+
+# 运行期产物（reports/ 与 artifacts/ 的成果文件随仓库提交，便于审阅）
+*.log
