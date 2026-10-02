@@ -10,7 +10,7 @@ SHAP 可解释性与 FastAPI 评分服务。
 ![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/pytest-85%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/pytest-95%20passed-brightgreen)
 
 ---
 
@@ -24,6 +24,8 @@ flowchart LR
     D --> E[实验矩阵<br/>LR vs LightGBM<br/>none / weight / SMOTE<br/>5 折 CV：AUC + KS<br/>校准：Brier / ECE]
     E --> F[可解释性<br/>SHAP 全局 + 单样本<br/>coef×WOE 线性归因]
     E --> G[稳定性<br/>自实现 PSI<br/>train vs test + 漂移注入]
+    E --> T[阈值-业务分析<br/>批准率 / 坏账率]
+    T --> H
     F --> H[部署<br/>FastAPI /score<br/>PD + 风险分档 + top 特征解释]
     G --> H
 ```
@@ -38,7 +40,7 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（85 个）
+# 3. 全量测试（95 个）
 python -m pytest tests
 
 # 4. 启动评分服务
@@ -131,6 +133,23 @@ CV AUC 差距仅 0.0012（LR）/ 0.0009（LightGBM），SMOTE 未带来可辨识
 逐桶数据见 [reports/calibration_table.csv](reports/calibration_table.csv)
 （完整表亦写入 reports/training_report.md 与 artifacts/metrics.json 的 `calibration` 字段）。
 
+### 阈值-业务指标（批准率 / 坏账率）
+
+业务执行的是"在阈值处批准多少、批准的人群坏多少"。决策规则：PD < 阈值 → 批准；
+阈值取测试集 PD 分位数，属**排序型阈值，不受上一节 PD 校准偏移影响**。
+测试集（n=200）实跑（scripts/run_training.py 产出）：
+
+| 目标批准率 | 阈值 | 实际批准率 | 批内坏账率 | 拒件坏账率 |
+|---|---|---|---|---|
+| 70% | 0.620 | 70.0% | **16.4%** | 61.7% |
+| 80% | 0.696 | 80.0% | 20.6% | 67.5% |
+| 90% | 0.848 | 90.0% | 25.0% | 75.0% |
+
+批准率从 90% 收紧到 70%，批内坏账率由 25.0% 降至 16.4%（相对下降 34%），
+被拒人群坏账率 61.7%——模型排序确实把高风险申请人集中到了拒绝侧。
+完整扫描（PD 十分位）见 [reports/threshold_tradeoff.csv](reports/threshold_tradeoff.csv)，
+曲线见 [reports/threshold_tradeoff.png](reports/threshold_tradeoff.png)。
+
 ### 评分服务契约
 
 - `POST /score`：20 特征 JSON（Pydantic v2 强校验：类别取值白名单，非法值 422；
@@ -143,10 +162,10 @@ CV AUC 差距仅 0.0012（LR）/ 0.0009（LightGBM），SMOTE 未带来可辨识
 
 ```
 credit-risk-modeling/
-├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / models / explain / eda
+├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / thresholds / models / explain / eda
 ├── app/                   # FastAPI 服务（schemas + main）
 ├── scripts/               # run_eda.py / run_training.py / 检查脚本
-├── tests/                 # 85 个 pytest（单元 + API 契约）
+├── tests/                 # 95 个 pytest（单元 + API 契约）
 ├── artifacts/             # pipeline.joblib + model_meta.json + metrics.json（随仓库提交）
 ├── reports/               # EDA/训练/稳定性报告与图表（随仓库提交）
 ├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
@@ -185,6 +204,9 @@ credit-risk-modeling/
    本项目如实量化了该偏移但**未实现** Platt/isotonic 修正；需要绝对 PD 的场景
    （定价、拨备、监管资本）应先在验证集上做校准修正，或直接部署未加权模型
    （排序损失约 0.001 AUC，可自行权衡）。
+9. **阈值-业务分析为描述性扫描**：批准率/坏账率表未引入利润或损失矩阵，不构成
+   阈值最优化建议；且测试集仅 200 条、每档约 20 样本，坏账率读数对单样本波动
+   敏感（±1 个坏样本 ≈ ±5 个百分点），不能当作稳定业务参数外推。
 
 ## License
 

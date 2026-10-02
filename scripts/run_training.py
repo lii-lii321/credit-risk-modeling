@@ -54,6 +54,11 @@ from creditrisk.models import (  # noqa: E402
     select_best,
 )
 from creditrisk.psi import psi_table  # noqa: E402
+from creditrisk.thresholds import (  # noqa: E402
+    plot_tradeoff_curves,
+    thresholds_for_approval_rates,
+    tradeoff_table,
+)
 from creditrisk.woe import WoEEncoder  # noqa: E402
 from sklearn.model_selection import train_test_split  # noqa: E402
 
@@ -141,6 +146,28 @@ def main() -> None:
         f"{calibration['deployed']['mean_predicted_pd']:.3f} vs 实际违约率 "
         f"{calibration['deployed']['observed_bad_rate']:.3f}")
 
+    # -------------------------------------------------- threshold trade-off
+    # 把 PD 排序翻译成业务口径：不同批准率目标下的阈值与批内/拒件坏账率。
+    # 阈值取测试集 PD 分位数，属排序型阈值，不受上面校准偏移影响。
+    tradeoff_grid = np.quantile(test_proba, np.linspace(0.1, 0.9, 9))
+    tradeoff = tradeoff_table(y_test, test_proba, tradeoff_grid)
+    approval_targets = (0.7, 0.8, 0.9)
+    tradeoff_targets = thresholds_for_approval_rates(y_test, test_proba, approval_targets)
+    tradeoff.to_csv(REPORTS_DIR / "threshold_tradeoff.csv", index=False)
+    tradeoff_targets.to_csv(REPORTS_DIR / "threshold_targets.csv", index=False)
+    plot_tradeoff_curves(y_test, test_proba, tradeoff_grid,
+                         REPORTS_DIR / "threshold_tradeoff.png")
+    threshold_tradeoff = {
+        "decision_rule": "approve if PD < threshold",
+        "test_n": int(len(y_test)),
+        "grid_quantiles": [float(q) for q in np.linspace(0.1, 0.9, 9)],
+        "table": tradeoff.to_dict("records"),
+        "targets": tradeoff_targets.to_dict("records"),
+    }
+    log("阈值-业务指标（目标批准率 70/80/90%）：")
+    log(tradeoff_targets.to_string(index=False))
+
+
     # ------------------------------------------------------------- IV
     woe = WoEEncoder(n_bins=10).fit(X_train, y_train)
     iv_table = woe.iv_table()
@@ -197,6 +224,7 @@ def main() -> None:
         "selected": {"model": best_model, "strategy": best_strategy},
         "final_test_metrics": final_metrics,
         "calibration": calibration,
+        "threshold_tradeoff": threshold_tradeoff,
         "global_importance_method": shap_method,
         "deployed_model_local_explanation": (
             ("shap" if best_model == "lightgbm" else "coef_x_woe_deviation")
@@ -334,10 +362,45 @@ def main() -> None:
         "",
         "![calibration](calibration_curve.png)",
         "",
+        "## 阈值-业务指标（批准率 / 坏账率，独立测试集）",
+        "",
+        f"决策规则：PD < 阈值 → 批准，PD ≥ 阈值 → 拒绝（n={len(y_test)}）。",
+        "阈值取测试集 PD 的十分位分位数，属排序型阈值，不受 PD 绝对值校准偏移影响。",
+        "",
+        "### 阈值扫描（PD 十分位）",
+        "",
+        tradeoff.to_markdown(index=False),
+        "",
+        "### 按目标批准率反查阈值",
+        "",
+        tradeoff_targets.to_markdown(index=False),
+        "",
+        _threshold_conclusion(tradeoff_targets, len(y_test)),
+        "",
+        "![threshold trade-off](threshold_tradeoff.png)",
+        "",
     ]
     (REPORTS_DIR / "training_report.md").write_text("\n".join(report), encoding="utf-8")
 
     log(f"完成，用时 {time.time() - started:.1f}s；产物见 artifacts/ 与 reports/")
+
+
+def _threshold_conclusion(targets_table: pd.DataFrame, test_n: int) -> str:
+    """按实测数字给出阈值-业务结论（数据驱动）：收紧批准率换来多少坏账率下降。"""
+    tightest = targets_table.iloc[0]        # 目标批准率最低（最严）一行
+    loosest = targets_table.iloc[-1]        # 目标批准率最高（最松）一行
+    drop = loosest["bad_rate_approved"] - tightest["bad_rate_approved"]
+    relative = drop / loosest["bad_rate_approved"] if loosest["bad_rate_approved"] else float("nan")
+    smallest_cell = int(targets_table[["n_approved", "n_rejected"]].to_numpy().min())
+    return (
+        f"**结论**：批准率从 {loosest['approval_rate']:.0%} 收紧到 {tightest['approval_rate']:.0%}"
+        f"（阈值 {loosest['threshold']:.3f} → {tightest['threshold']:.3f}），"
+        f"批内坏账率由 {loosest['bad_rate_approved']:.1%} 降至 {tightest['bad_rate_approved']:.1%}"
+        f"（相对下降 {relative:.0%}），被拒人群坏账率 {tightest['bad_rate_rejected']:.1%}。"
+        f"本分析为描述性扫描，未引入利润/损失矩阵做阈值最优化；测试集仅 {test_n} 条，"
+        f"最细分组（十分位扫描每档、或最松目标下的拒绝组）约 {smallest_cell} 条，"
+        f"坏账率读数对单样本波动敏感（±1 个坏样本 ≈ ±{100 / smallest_cell:.0f} 个百分点）。"
+    )
 
 
 def _calibration_conclusion(calibration: dict) -> str:
