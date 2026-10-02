@@ -10,7 +10,7 @@ SHAP 可解释性与 FastAPI 评分服务。
 ![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/pytest-64%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/pytest-74%20passed-brightgreen)
 
 ---
 
@@ -38,7 +38,7 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（64 个）
+# 3. 全量测试（74 个）
 python -m pytest tests
 
 # 4. 启动评分服务
@@ -109,8 +109,9 @@ CV AUC 差距仅 0.0012（LR）/ 0.0009（LightGBM），SMOTE 未带来可辨识
 ### 稳定性（自实现 PSI）
 
 - train vs test：20 特征最大 PSI **0.0727** → 全部 <0.1，同分布切分符合预期；
-- 漂移注入对照（age+15 / credit_amount×1.5 / duration+12）：对应特征 PSI 升至
-  **4.24 / 3.14 / 0.50**，验证 PSI 实现确实能检出漂移（见 [reports/stability_report.md](reports/stability_report.md)）。
+- 漂移注入对照（age+15 / credit_amount×1.5 / duration+12）：age PSI 升至 **4.24**、
+  duration 升至 **3.14**、credit_amount 升至 **0.50**，验证 PSI 实现确实能检出漂移
+  （见 [reports/stability_report.md](reports/stability_report.md)）。
 
 ### 评分服务契约
 
