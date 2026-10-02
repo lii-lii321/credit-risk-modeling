@@ -24,5 +24,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Check dependency consistency
+        run: pip check
+
+      # 快速开始冒烟：两个文档化入口必须在干净 CI 环境真实可跑
+      # （数据走仓库内缓存 data/raw/credit-g.csv，断网可用）
+      - name: Smoke run EDA entry
+        run: python scripts/run_eda.py
+
+      - name: Smoke run training entry
+        run: python scripts/run_training.py
+
       - name: Run tests
         run: python -m pytest tests -v
