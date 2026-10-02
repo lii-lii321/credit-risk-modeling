@@ -120,7 +120,6 @@ def run_eda(df: pd.DataFrame, out_dir: Optional[Path] = None) -> dict:
         "n_features": int(X.shape[1]),
         "bad_rate": float(y.mean()),
         "total_missing": int(X.isna().sum().sum()),
-        "max_abs_corr": float(X[NUM_FEATURES].corr().abs().to_numpy().sum()) * 0  # placeholder
     }
     corr_matrix = X[NUM_FEATURES].corr().abs()
     np.fill_diagonal(corr_matrix.to_numpy(), 0)
@@ -130,18 +129,25 @@ def run_eda(df: pd.DataFrame, out_dir: Optional[Path] = None) -> dict:
     )
     stats["top_corr_pair"] = list(top_corr_pair)
 
+    n_bad = int(round(stats["bad_rate"] * stats["n_rows"]))
+    if stats["total_missing"] == 0:
+        missing_note = "数据无缺失，WOE 编码器仍保留缺失成箱处理路径"
+    else:
+        missing_note = f"存在 {stats['total_missing']} 个缺失值，WOE 编码器会把缺失单独成箱"
     lines = [
         "# EDA 摘要（credit-g）",
         "",
-        f"- 样本量：{stats['n_rows']} 行 × {stats['n_features']} 特征；违约率 {stats['bad_rate']:.1%}（300/1000）",
-        f"- 缺失值总数：{stats['total_missing']}（credit-g 无缺失，WOE 编码器仍保留缺失处理路径）",
+        f"- 样本量：{stats['n_rows']} 行 × {stats['n_features']} 特征；"
+        f"违约率 {stats['bad_rate']:.1%}（{n_bad}/{stats['n_rows']}）",
+        f"- 缺失值总数：{stats['total_missing']}（{missing_note}）",
         f"- 数值特征最大|相关系数|：{stats['max_abs_corr']:.2f}（{stats['top_corr_pair'][0]} vs {stats['top_corr_pair'][1]}），共线性风险低",
         "",
         "## 图表",
         "",
     ]
     for key in ("target", "missing", "numeric", "categorical", "correlation"):
-        lines.append(f"![{key}](eda_{key}.png)" if key != "target" else f"![target](eda_target_distribution.png)")
+        # 链接必须与 _save 实际落盘文件名一致（paths[key].name），否则报告在仓库中裂图
+        lines.append(f"![{key}]({paths[key].name})")
     lines += [
         "",
         "## 观察",
