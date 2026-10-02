@@ -1,0 +1,275 @@
+# -*- coding: utf-8 -*-
+"""端到端训练入口：实验对比 → 最优模型 → 产物落盘 → 可解释性 → 稳定性报告。
+
+运行：python scripts/run_training.py
+产物：
+- artifacts/pipeline.joblib、model_meta.json、metrics.json
+- reports/model_comparison.csv、iv_table.csv、shap_*.csv/png、
+  stability_report.md、training_report.md
+"""
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+import joblib
+import lightgbm
+import numpy as np
+import pandas as pd
+import shap
+import sklearn
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from creditrisk.config import (  # noqa: E402
+    ARTIFACTS_DIR,
+    CAT_FEATURES,
+    CATEGORY_VALUES,
+    FEATURES,
+    REPORTS_DIR,
+    TEST_SIZE,
+    RANDOM_STATE,
+    TARGET_COL,
+)
+from creditrisk.data import load_credit_data  # noqa: E402
+from creditrisk.evaluate import evaluate_predictions  # noqa: E402
+from creditrisk.explain import SHAP_AVAILABLE, explain_instance, global_importance  # noqa: E402
+from creditrisk.models import (  # noqa: E402
+    fit_deployable_pipeline,
+    run_all_experiments,
+    select_best,
+)
+from creditrisk.psi import psi_table  # noqa: E402
+from creditrisk.woe import WoEEncoder  # noqa: E402
+from sklearn.model_selection import train_test_split  # noqa: E402
+
+
+def log(msg: str) -> None:
+    print(f"[training] {msg}", flush=True)
+
+
+def main() -> None:
+    started = time.time()
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ---------------------------------------------------------------- data
+    data = load_credit_data()
+    if data.is_synthetic:
+        log("警告：OpenML 拉取失败，当前为合成降级数据！以下指标不代表真实数据表现。")
+    X, y = data.X, data.y
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, stratify=y, random_state=RANDOM_STATE
+    )
+    log(f"数据：train={len(X_train)} test={len(X_test)} 坏样本率 train={y_train.mean():.3f} test={y_test.mean():.3f}")
+
+    # ------------------------------------------------------- experiments
+    results = run_all_experiments(X_train, y_train, X_test, y_test)
+    results = results.sort_values("cv_auc_mean", ascending=False, ignore_index=True)
+    results.to_csv(REPORTS_DIR / "model_comparison.csv", index=False)
+    log("模型对比（按 CV AUC 排序）：")
+    log(results.to_string(index=False))
+
+    best_model, best_strategy = select_best(results)
+    log(f"最优组合：model={best_model} strategy={best_strategy}")
+
+    # --------------------------------------------------- final artifact
+    pipeline = fit_deployable_pipeline(X_train, y_train, best_model, best_strategy)
+    test_proba = pipeline.predict_proba(X_test)[:, 1]
+    final_metrics = evaluate_predictions(y_test, test_proba)
+    log(f"最终模型测试集指标：{final_metrics}")
+    joblib.dump(pipeline, ARTIFACTS_DIR / "pipeline.joblib")
+
+    # risk band 阈值：测试集 PD 的 60% / 85% 分位
+    t_low, t_high = np.quantile(test_proba, [0.60, 0.85])
+
+    # ------------------------------------------------------------- IV
+    woe = WoEEncoder(n_bins=10).fit(X_train, y_train)
+    iv_table = woe.iv_table()
+    iv_table.to_csv(REPORTS_DIR / "iv_table.csv", index=False)
+    log(f"IV 前 5：{iv_table.head(5).to_dict('records')}")
+
+    # ------------------------------------------------------- explain
+    # SHAP 全局重要性固定在 LightGBM 上做树 SHAP（任务要求的可解释性产物）；
+    # 若最终部署模型是逻辑回归，则其单样本解释走 coef 路径并如实记录方法。
+    if SHAP_AVAILABLE:
+        lgbm_pipe = fit_deployable_pipeline(X_train, y_train, "lightgbm", "weight")
+        imp = global_importance(lgbm_pipe, X_train)
+        shap_method = "shap_mean_abs(lightgbm+weight)"
+        local_lgbm = explain_instance(lgbm_pipe, X_test.iloc[[0]], top_k=3)
+        log(f"LightGBM SHAP 单样本解释（PD={lgbm_pipe.predict_proba(X_test.iloc[[0]])[0, 1]:.3f}）：{local_lgbm}")
+    else:
+        imp = global_importance(pipeline, X_train, y=y_train, use_shap=False)
+        shap_method = "permutation_auc_drop"
+        local_lgbm = None
+        log("提示：shap 不可用，全局重要性已降级为 permutation importance（诚实降级）。")
+
+    imp.to_csv(REPORTS_DIR / "shap_global_importance.csv", index=False)
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    top = imp.head(15).iloc[::-1]
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.barh(top["feature"], top["importance"], color="#1a365d")
+    ax.set_title(f"Global feature importance ({shap_method})")
+    ax.set_xlabel("importance")
+    fig.tight_layout()
+    fig.savefig(REPORTS_DIR / "shap_global_importance.png", dpi=150)
+    plt.close(fig)
+
+    example_row = X_test.iloc[[0]]
+    local = explain_instance(pipeline, example_row, top_k=3)
+    log(f"部署模型单样本解释示例（真实 y={int(y_test.iloc[0])}, PD={test_proba[0]:.3f}）：{local}")
+
+    # ------------------------------------------------------- artifacts
+    metrics_payload = {
+        "data_source": "openml:credit-g:v1" if not data.is_synthetic else "synthetic_fallback",
+        "train_size": int(len(X_train)),
+        "test_size": int(len(X_test)),
+        "bad_rate_train": float(y_train.mean()),
+        "bad_rate_test": float(y_test.mean()),
+        "experiments": results.to_dict("records"),
+        "selected": {"model": best_model, "strategy": best_strategy},
+        "final_test_metrics": final_metrics,
+        "global_importance_method": shap_method,
+        "deployed_model_local_explanation": "shap" if best_model == "lightgbm" else "coef_x_woe_deviation",
+        "local_example": {
+            "pd": float(test_proba[0]),
+            "y_true": int(y_test.iloc[0]),
+            "top_features": local,
+        },
+        "shap_local_example_lightgbm": local_lgbm,
+    }
+    (ARTIFACTS_DIR / "metrics.json").write_text(
+        json.dumps(metrics_payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    meta = {
+        "model_version": "1.0.0",
+        "model": best_model,
+        "strategy": best_strategy,
+        "target": TARGET_COL,
+        "features": FEATURES,
+        "categorical_features": CAT_FEATURES,
+        "category_values": CATEGORY_VALUES,
+        "risk_band_thresholds": {"low_below": float(t_low), "medium_below": float(t_high)},
+        "test_metrics": final_metrics,
+        "global_importance_method": shap_method,
+        "trained_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "library_versions": {
+            "scikit-learn": sklearn.__version__,
+            "lightgbm": lightgbm.__version__,
+            "shap": shap.__version__ if SHAP_AVAILABLE else None,
+            "pandas": pd.__version__,
+            "numpy": np.__version__,
+            "python": sys.version.split()[0],
+        },
+    }
+    (ARTIFACTS_DIR / "model_meta.json").write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # ------------------------------------------------------- stability
+    psi_train_test = psi_table(X_train, X_test)
+    shifted = X_test.copy()
+    shifted["age"] = shifted["age"] + 15
+    shifted["credit_amount"] = shifted["credit_amount"] * 1.5
+    shifted["duration"] = shifted["duration"] + 12
+    psi_shifted = psi_table(X_train, shifted)
+    psi_train_test.to_csv(REPORTS_DIR / "psi_train_vs_test.csv", index=False)
+    psi_shifted.to_csv(REPORTS_DIR / "psi_shifted_demo.csv", index=False)
+    stability_md = [
+        "# 特征稳定性（PSI）报告",
+        "",
+        "PSI 判读标准：<0.1 稳定；0.1-0.25 中度漂移；>0.25 显著漂移。",
+        "",
+        "## train vs test（同分布随机切分，预期稳定）",
+        "",
+        psi_train_test.to_markdown(index=False),
+        "",
+        f"最大 PSI：**{psi_train_test['psi'].max():.4f}** → "
+        f"{'整体稳定' if psi_train_test['psi'].max() < 0.1 else '存在漂移'}",
+        "",
+        "## train vs 人为漂移的 test（age+15 岁、credit_amount×1.5、duration+12 月）",
+        "",
+        "用于验证 PSI 工具确实能检出漂移（自实现模块的在线对照实验）：",
+        "",
+        psi_shifted.head(8).to_markdown(index=False),
+        "",
+        f"最大 PSI：**{psi_shifted['psi'].max():.4f}** → 应显著大于 0.25。",
+    ]
+    (REPORTS_DIR / "stability_report.md").write_text("\n".join(stability_md), encoding="utf-8")
+    log(f"PSI train-vs-test 最大值 {psi_train_test['psi'].max():.4f}；漂移演示最大值 {psi_shifted['psi'].max():.4f}")
+
+    # ------------------------------------------------- training report
+    top_iv = iv_table.head(8)
+    top_shap = imp.head(8)
+    report = [
+        "# 训练报告（credit-g 端到端）",
+        "",
+        f"- 训练时间：{meta['trained_at']}；数据：{metrics_payload['data_source']}",
+        f"- 切分：分层 train/test = {len(X_train)}/{len(X_test)}（seed={RANDOM_STATE}）",
+        "",
+        "## 实验矩阵（2 模型 × 3 不平衡策略，5 折分层 CV + 独立测试集）",
+        "",
+        results.to_markdown(index=False),
+        "",
+        f"**最优组合：{best_model} + {best_strategy}**；测试集 AUC={final_metrics['auc']:.4f}，"
+        f"KS={final_metrics['ks']:.4f}，Gini={final_metrics['gini']:.4f}。",
+        "",
+        "## 不平衡处理结论",
+        "",
+        _imbalance_conclusion(results),
+        "",
+        "## IV 前 8（训练集 WOE/IV）",
+        "",
+        top_iv.to_markdown(index=False),
+        "",
+        f"## 全局重要性前 8（方法：{shap_method}）",
+        "",
+        top_shap.to_markdown(index=False),
+        "",
+        "## 单样本解释示例（测试集第 1 条）",
+        "",
+        f"部署模型（{best_model}）归因方法：`{'shap' if best_model == 'lightgbm' else 'coef_x_woe_deviation'}`",
+        "",
+        f"```json\n{json.dumps({'pd': float(test_proba[0]), 'y_true': int(y_test.iloc[0]), 'top_features': local}, ensure_ascii=False, indent=2)}\n```",
+        "",
+        f"LightGBM 的 SHAP 归因（供对照）：`{json.dumps(local_lgbm, ensure_ascii=False)}`",
+        "",
+        "## 风险分档阈值（测试集 PD 分位）",
+        "",
+        f"- 低风险：PD < {t_low:.3f}；中风险：{t_low:.3f} ≤ PD < {t_high:.3f}；高风险：PD ≥ {t_high:.3f}",
+        "",
+    ]
+    (REPORTS_DIR / "training_report.md").write_text("\n".join(report), encoding="utf-8")
+
+    log(f"完成，用时 {time.time() - started:.1f}s；产物见 artifacts/ 与 reports/")
+
+
+def _imbalance_conclusion(results: pd.DataFrame) -> str:
+    lines = []
+    for model in results["model"].unique():
+        sub = results[results["model"] == model].set_index("strategy")
+        none_auc = sub.loc["none", "cv_auc_mean"]
+        weight_auc = sub.loc["weight", "cv_auc_mean"]
+        smote_auc = sub.loc["smote", "cv_auc_mean"]
+        best = max([("none", none_auc), ("weight", weight_auc), ("smote", smote_auc)], key=lambda kv: kv[1])
+        gap = abs(weight_auc - smote_auc)
+        lines.append(
+            f"- **{model}**：none={none_auc:.4f}，weight={weight_auc:.4f}，smote={smote_auc:.4f}（CV AUC）。"
+            f"最优策略为 {best[0]}；weight 与 smote 差距 {gap:.4f}。"
+            + ("两者几乎无差异——credit-g 不平衡程度温和（约 30% 坏样本），样本加权以更低复杂度达到同等效果，作为部署默认策略。"
+               if gap < 0.01 else
+               "存在可见差异，选择 CV AUC 更高者并如实记录。")
+        )
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    main()

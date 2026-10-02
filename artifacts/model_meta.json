@@ -1,0 +1,146 @@
+{
+  "model_version": "1.0.0",
+  "model": "logistic_regression",
+  "strategy": "weight",
+  "target": "default",
+  "features": [
+    "checking_status",
+    "credit_history",
+    "purpose",
+    "savings_status",
+    "employment",
+    "personal_status",
+    "other_parties",
+    "property_magnitude",
+    "other_payment_plans",
+    "housing",
+    "job",
+    "own_telephone",
+    "foreign_worker",
+    "duration",
+    "credit_amount",
+    "installment_commitment",
+    "residence_since",
+    "age",
+    "existing_credits",
+    "num_dependents"
+  ],
+  "categorical_features": [
+    "checking_status",
+    "credit_history",
+    "purpose",
+    "savings_status",
+    "employment",
+    "personal_status",
+    "other_parties",
+    "property_magnitude",
+    "other_payment_plans",
+    "housing",
+    "job",
+    "own_telephone",
+    "foreign_worker"
+  ],
+  "category_values": {
+    "checking_status": [
+      "0<=X<200",
+      "<0",
+      ">=200",
+      "no checking"
+    ],
+    "credit_history": [
+      "all paid",
+      "critical/other existing credit",
+      "delayed previously",
+      "existing paid",
+      "no credits/all paid"
+    ],
+    "purpose": [
+      "business",
+      "domestic appliance",
+      "education",
+      "furniture/equipment",
+      "new car",
+      "other",
+      "radio/tv",
+      "repairs",
+      "retraining",
+      "used car"
+    ],
+    "savings_status": [
+      "100<=X<500",
+      "500<=X<1000",
+      "<100",
+      ">=1000",
+      "no known savings"
+    ],
+    "employment": [
+      "1<=X<4",
+      "4<=X<7",
+      "<1",
+      ">=7",
+      "unemployed"
+    ],
+    "personal_status": [
+      "female div/dep/mar",
+      "male div/sep",
+      "male mar/wid",
+      "male single"
+    ],
+    "other_parties": [
+      "co applicant",
+      "guarantor",
+      "none"
+    ],
+    "property_magnitude": [
+      "car",
+      "life insurance",
+      "no known property",
+      "real estate"
+    ],
+    "other_payment_plans": [
+      "bank",
+      "none",
+      "stores"
+    ],
+    "housing": [
+      "for free",
+      "own",
+      "rent"
+    ],
+    "job": [
+      "high qualif/self emp/mgmt",
+      "skilled",
+      "unemp/unskilled non res",
+      "unskilled resident"
+    ],
+    "own_telephone": [
+      "none",
+      "yes"
+    ],
+    "foreign_worker": [
+      "no",
+      "yes"
+    ]
+  },
+  "risk_band_thresholds": {
+    "low_below": 0.5063200128288048,
+    "medium_below": 0.7919167612214701
+  },
+  "test_metrics": {
+    "auc": 0.8013095238095239,
+    "ks": 0.5119047619047619,
+    "gini": 0.6026190476190478,
+    "n": 200,
+    "bad_rate": 0.3
+  },
+  "global_importance_method": "shap_mean_abs(lightgbm+weight)",
+  "trained_at": "2026-10-02 17:51:02",
+  "library_versions": {
+    "scikit-learn": "1.7.2",
+    "lightgbm": "4.6.0",
+    "shap": "0.49.1",
+    "pandas": "2.3.3",
+    "numpy": "2.2.6",
+    "python": "3.10.9"
+  }
+}
