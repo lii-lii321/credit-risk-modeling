@@ -122,3 +122,58 @@ def test_single_class_raises():
 )
 def test_iv_strength_mapping(iv, expected):
     assert iv_strength(iv) == expected
+
+
+# ---------------------------------------------------------- 缺失成箱正确性
+def test_missing_bin_numeric_woe_matches_formula():
+    """回归：缺失样本的 WOE 必须按真实 bad/good 计数计算，而非静默为 0。
+
+    构造：10 个缺失全为 bad、10 个非缺失全为 good，n_bins=5 → 分位数边界
+    去重后 6 个边界 → 5 个数据箱 + 1 个缺失箱 = 6 labels；
+    平滑公式 WOE_missing = ln((n_bad+α)/(n_good+α))（分母相同抵消）
+                        = ln(10.5/0.5) = ln(21) ≈ 3.0445。
+    """
+    X = pd.DataFrame({"f": [np.nan] * 10 + list(range(10, 20))})
+    y = pd.Series([1] * 10 + [0] * 10)
+    enc = WoEEncoder(n_bins=5).fit(X, y)
+    alpha, n_labels = 0.5, 6
+    expected = float(np.log((10 + alpha) / (0 + alpha)))  # 分母 (10+α·6) 两侧相同
+    assert enc.woe_maps_["f"]["__MISSING__"] == pytest.approx(expected)
+    assert enc.woe_maps_["f"]["__MISSING__"] == pytest.approx(np.log(21), rel=1e-9)
+    assert n_labels == len(enc.woe_maps_["f"])
+
+
+def test_missing_bin_categorical_all_good_is_strongly_negative():
+    """类别列缺失单成箱：缺失全为 good 时 WOE 应显著为负，而非 0。"""
+    X = pd.DataFrame({"c": ["A"] * 10 + [np.nan] * 10})
+    y = pd.Series([0] * 10 + [1] * 10)
+    enc = WoEEncoder().fit(X, y)
+    assert enc.woe_maps_["c"]["__MISSING__"] > 2.0  # 缺失侧全是 bad
+    assert enc.woe_maps_["c"]["A"] < -2.0
+
+
+def test_transform_maps_nan_to_missing_bin_woe(tiny_df):
+    """transform 输入缺失时必须取缺失箱的（非零）WOE，而非 0。"""
+    X, y = tiny_df
+    X = X.copy()
+    X.loc[X.index[:50], "num"] = np.nan
+    X.loc[X.index[:50], "cat"] = np.nan
+    enc = WoEEncoder().fit(X, y)
+    probe = pd.DataFrame({"cat": [np.nan], "num": [np.nan]})
+    out = enc.transform(probe)
+    assert out["num_woe"].iloc[0] == pytest.approx(enc.woe_maps_["num"]["__MISSING__"])
+    assert out["cat_woe"].iloc[0] == pytest.approx(enc.woe_maps_["cat"]["__MISSING__"])
+    # 50 个缺失样本不应与全零退化一致：至少一个方向的 WOE 非零
+    assert abs(enc.woe_maps_["num"]["__MISSING__"]) > 0 or abs(enc.woe_maps_["cat"]["__MISSING__"]) > 0
+
+
+def test_all_nan_numeric_column_degrades_to_missing_bin_only():
+    """全缺失数值列：无分位边界（edges 为空 → bin_ids 为 np.nan）也不崩溃，
+    且全部样本落入缺失箱。"""
+    X = pd.DataFrame({"f": [np.nan] * 20, "g": np.arange(20, dtype=float)})
+    y = pd.Series([0, 1] * 10)
+    enc = WoEEncoder(n_bins=5).fit(X, y)
+    out = enc.transform(X)
+    assert np.isfinite(out.to_numpy()).all()
+    assert len(enc.woe_maps_["f"]) == 1  # 只有缺失箱
+    assert out["f_woe"].nunique() == 1   # 全部同箱

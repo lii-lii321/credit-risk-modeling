@@ -116,7 +116,11 @@ class WoEEncoder(BaseEstimator, TransformerMixin):
         iv = 0.0
         for label in labels:
             if label == MISSING_BIN:
-                mask = pd.isna(bin_ids) if bin_ids.dtype == object else np.asarray(bin_ids) == MISSING_BIN
+                # bin_ids 各路径（数值/类别）产出的都是 object 数组：缺失位置为
+                # "__MISSING__" 字符串或 np.nan（全缺失列退化分支），
+                # 单用 pd.isna 会恒 False（字符串非 NaN），必须两者都查。
+                arr = np.asarray(bin_ids)
+                mask = (arr == MISSING_BIN) | pd.isna(arr)
             else:
                 mask = np.asarray(bin_ids) == label
             n_bin_bad = int(((y == 1) & mask).sum())
