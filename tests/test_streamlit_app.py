@@ -91,21 +91,46 @@ def test_load_bundle_missing_dir_has_actionable_message(tmp_path):
     assert "run_training" in str(exc_info.value)
 
 
-def test_streamlit_ui_renders_and_threshold_flips_decision():
-    """AppTest 真实渲染薄壳 UI：无异常、PD 指标存在、阈值滑杆联动审批结论。"""
+def test_streamlit_ui_renders_and_profile_flips_decision():
+    """AppTest 真实渲染薄壳 UI：无异常、PD 指标存在、画像改动联动审批结论。
+
+    注意：不要用 set_value 设滑杆越界值（低于 min_value 会被新版 Streamlit
+    静默裁剪回默认值，导致断言不稳定），决策联动改由高风险画像驱动。
+    """
     from pathlib import Path
 
     from streamlit.testing.v1 import AppTest
 
     app_path = Path(__file__).resolve().parents[1] / "streamlit_app.py"
+
+    def decision_text(at):
+        if at.error:
+            return at.error[0].value
+        if at.success:
+            return at.success[0].value
+        return ""
+
     at = AppTest.from_file(str(app_path), default_timeout=180)
     at.run()
     assert not at.exception
     assert at.metric[0].label == "违约概率 PD（校准后）"
     assert len(at.selectbox) == 13 and len(at.slider) == 8
+    # 默认优质画像：应显示批准
+    assert "批准" in decision_text(at)
 
-    thr = [s for s in at.slider if "阈值" in s.label][0]
-    thr.set_value(0.01).run()
+    # 通过界面控件切到完整高风险画像（与 tests/test_api.py 的 RISKY 同参）：
+    # 校准后 PD 升至约 90%，默认阈值 0.5 下应转为拒绝
+    selectboxes = {s.label: s for s in at.selectbox}
+    sliders = {s.label: s for s in at.slider}
+    selectboxes["checking_status"].set_value("<0")
+    selectboxes["credit_history"].set_value("delayed previously")
+    selectboxes["savings_status"].set_value("<100")
+    selectboxes["employment"].set_value("unemployed")
+    selectboxes["property_magnitude"].set_value("no known property")
+    selectboxes["housing"].set_value("rent")
+    selectboxes["other_payment_plans"].set_value("bank")
+    selectboxes["foreign_worker"].set_value("yes")
+    sliders["贷款期限（月）"].set_value(48.0).run()
+    sliders["贷款金额（DM）"].set_value(12000.0).run()
     assert not at.exception
-    assert at.error  # 极低阈值下默认画像转为拒绝
-    assert "拒绝" in at.error[0].value
+    assert "拒绝" in decision_text(at)
