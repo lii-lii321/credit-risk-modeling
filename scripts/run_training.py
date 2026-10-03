@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """端到端训练入口：实验对比 → 最优模型 → 校准修复 → 产物落盘 → 可解释性 → 稳定性报告。
 
 运行：python scripts/run_training.py
@@ -33,16 +32,8 @@ except Exception:  # noqa: BLE001
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from creditrisk.config import (  # noqa: E402
-    ARTIFACTS_DIR,
-    CAT_FEATURES,
-    CATEGORY_VALUES,
-    FEATURES,
-    REPORTS_DIR,
-    TEST_SIZE,
-    RANDOM_STATE,
-    TARGET_COL,
-)
+from sklearn.model_selection import train_test_split  # noqa: E402
+
 from creditrisk.calibration import (  # noqa: E402
     brier_score,
     expected_calibration_error,
@@ -53,6 +44,16 @@ from creditrisk.calibration_repair import (  # noqa: E402
     build_bundle,
     calibrate_pipeline,
     save_bundle,
+)
+from creditrisk.config import (  # noqa: E402
+    ARTIFACTS_DIR,
+    CAT_FEATURES,
+    CATEGORY_VALUES,
+    FEATURES,
+    RANDOM_STATE,
+    REPORTS_DIR,
+    TARGET_COL,
+    TEST_SIZE,
 )
 from creditrisk.data import load_credit_data  # noqa: E402
 from creditrisk.evaluate import evaluate_predictions  # noqa: E402
@@ -79,7 +80,6 @@ from creditrisk.thresholds import (  # noqa: E402
     tradeoff_table,
 )
 from creditrisk.woe import WoEEncoder  # noqa: E402
-from sklearn.model_selection import train_test_split  # noqa: E402
 
 
 def log(msg: str) -> None:
@@ -457,7 +457,7 @@ def main() -> None:
         "",
         f"部署模型（{best_model}）归因方法：`{metrics_payload['deployed_model_local_explanation']}`",
         "",
-        f"```json\n{json.dumps({'pd': float(test_proba[0]), 'y_true': int(y_test.iloc[0]), 'top_features': local}, ensure_ascii=False, indent=2)}\n```",
+        f"```json\n{json.dumps({'pd': float(test_proba[0]), 'y_true': int(y_test.iloc[0]), 'top_features': local}, ensure_ascii=False, indent=2)}\n```",  # noqa: E501 —— 单条 f-string 内嵌 json.dumps 调用，无法在不改内容的前提下拆行
         "",
         f"LightGBM 的 SHAP 归因（供对照）：`{json.dumps(local_lgbm, ensure_ascii=False)}`",
         "",
@@ -596,7 +596,8 @@ def _repair_selection_table(calibration: dict) -> pd.DataFrame:
     sel = calibration["repair"]["selection"]
     rows = [
         {"candidate": "raw (uncalibrated)", "valid_ece": sel["ece_valid_raw"], "valid_brier": sel["brier_valid_raw"]},
-        {"candidate": "sigmoid (platt)", "valid_ece": sel["ece_valid_sigmoid"], "valid_brier": sel["brier_valid_sigmoid"]},
+        {"candidate": "sigmoid (platt)", "valid_ece": sel["ece_valid_sigmoid"],
+         "valid_brier": sel["brier_valid_sigmoid"]},
         {"candidate": "isotonic", "valid_ece": sel["ece_valid_isotonic"], "valid_brier": sel["brier_valid_isotonic"]},
     ]
     table = pd.DataFrame(rows)
@@ -610,7 +611,8 @@ def _repair_test_table(t: dict) -> pd.DataFrame:
     return pd.DataFrame([
         {"metric": "ECE ↓", "before": round(t["test_ece_before"], 4), "after": round(t["test_ece_after"], 4)},
         {"metric": "Brier ↓", "before": round(t["test_brier_before"], 4), "after": round(t["test_brier_after"], 4)},
-        {"metric": "mean predicted PD", "before": round(t["test_mean_pd_before"], 4), "after": round(t["test_mean_pd_after"], 4)},
+        {"metric": "mean predicted PD", "before": round(t["test_mean_pd_before"], 4),
+         "after": round(t["test_mean_pd_after"], 4)},
         {"metric": "AUC（排序保持）", "before": round(t["test_auc_before"], 4), "after": round(t["test_auc_after"], 4)},
     ])
 
@@ -627,7 +629,7 @@ def _imbalance_conclusion(results: pd.DataFrame) -> str:
         lines.append(
             f"- **{model}**：none={none_auc:.4f}，weight={weight_auc:.4f}，smote={smote_auc:.4f}（CV AUC）。"
             f"最优策略为 {best[0]}；weight 与 smote 差距 {gap:.4f}。"
-            + ("两者几乎无差异——credit-g 不平衡程度温和（约 30% 坏样本），样本加权以更低复杂度达到同等效果，作为部署默认策略。"
+            + ("两者几乎无差异——credit-g 不平衡程度温和（约 30% 坏样本），样本加权以更低复杂度达到同等效果，作为部署默认策略。"  # noqa: E501 —— 长中文文案，隐式拼接拆行易引入字符差异
                if gap < 0.01 else
                "存在可见差异，选择 CV AUC 更高者并如实记录。")
         )

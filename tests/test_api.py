@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """API 契约测试：/health 与 /score 的正常流、校验失败流与解释口径。
 
 依赖 artifacts/pipeline.joblib + model_meta.json（随仓库提交，

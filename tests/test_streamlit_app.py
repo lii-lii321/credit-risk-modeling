@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Streamlit Demo 冒烟测试：模块可安全 import、纯函数打分行为正确。
 
 依赖仓库内真实产物 artifacts/deploy_bundle.joblib（随仓库提交，
@@ -6,7 +5,6 @@
 """
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 import streamlit_app as demo

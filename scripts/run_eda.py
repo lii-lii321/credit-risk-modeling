@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """运行 EDA：python scripts/run_eda.py"""
 import sys
 from pathlib import Path

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """特征工程管线：WOE 编码 + 模型的可部署 Pipeline 组装。"""
 from __future__ import annotations
 

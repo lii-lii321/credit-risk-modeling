@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """评价指标单元测试：KS 已知构造值、AUC 与 Gini 关系。"""
 import numpy as np
 import pytest

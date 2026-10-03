@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """可解释性模块：SHAP 全局重要性 + 单样本归因；提供两级降级路径。
 
 优先路径：shap.TreeExplainer（LightGBM）——精确的树模型 Shapley 值；
@@ -9,8 +8,6 @@
 两条路径都在 tests/test_explain.py 覆盖，README 如实声明当前实际使用的是哪条。
 """
 from __future__ import annotations
-
-from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -36,11 +33,11 @@ def _tree_shap_values(model, X_woe: pd.DataFrame) -> np.ndarray:
     return values
 
 
-def _strip_woe(names: List[str]) -> List[str]:
+def _strip_woe(names: list[str]) -> list[str]:
     return [n[: -len("_woe")] if n.endswith("_woe") else n for n in names]
 
 
-def global_importance(pipeline, X: pd.DataFrame, y: Optional[pd.Series] = None,
+def global_importance(pipeline, X: pd.DataFrame, y: pd.Series | None = None,
                       use_shap: bool = True, n_repeats: int = 5) -> pd.DataFrame:
     """全局特征重要性 DataFrame（feature, importance, method），按重要性降序。
 
@@ -77,7 +74,7 @@ def _transform_prefix(pipeline, X: pd.DataFrame) -> pd.DataFrame:
 
 
 def explain_instance(pipeline, X_row: pd.DataFrame, top_k: int = 3,
-                     background_means: Optional[pd.Series] = None) -> List[dict]:
+                     background_means: pd.Series | None = None) -> list[dict]:
     """单样本解释：返回按 |贡献| 降序的 top_k 个 {feature, contribution}。
 
     - 树模型 + shap 可用：该样本的 Tree SHAP 值（单位：对数几率贡献）；

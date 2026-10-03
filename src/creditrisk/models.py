@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """模型对比实验：逻辑回归基线 vs LightGBM；类不平衡用样本加权并与 SMOTE 对比。
 
 实验矩阵（2 模型 × 3 不平衡策略）：
@@ -10,8 +9,6 @@
 PSI/SHAP 解释口径一致。评估：5 折分层 CV 的 AUC/KS + 独立测试集指标。
 """
 from __future__ import annotations
-
-from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -74,11 +71,11 @@ def make_pipeline(model_name: str, strategy: str, n_bins: int = 10):
 
 
 def cross_validate_model(X: pd.DataFrame, y: pd.Series, model_name: str, strategy: str,
-                         n_splits: int = 5) -> Dict[str, float]:
+                         n_splits: int = 5) -> dict[str, float]:
     """5 折分层 CV：每折独立 fit，汇总 AUC/KS 均值与标准差。"""
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
-    aucs: List[float] = []
-    kss: List[float] = []
+    aucs: list[float] = []
+    kss: list[float] = []
     for train_idx, valid_idx in skf.split(X, y):
         pipe = make_pipeline(model_name, strategy)
         pipe.fit(X.iloc[train_idx], y.iloc[train_idx])
@@ -117,7 +114,7 @@ def run_all_experiments(X_train: pd.DataFrame, y_train: pd.Series,
     return pd.DataFrame(rows)
 
 
-def select_best(results: pd.DataFrame, tie_tolerance: float = 0.005) -> Tuple[str, str]:
+def select_best(results: pd.DataFrame, tie_tolerance: float = 0.005) -> tuple[str, str]:
     """按 CV AUC 选最优；差距在 tie_tolerance 内时偏向逻辑回归（可解释性优先）。"""
     best_auc = results["cv_auc_mean"].max()
     candidates = results[results["cv_auc_mean"] >= best_auc - tie_tolerance]

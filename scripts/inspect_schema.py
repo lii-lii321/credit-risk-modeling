@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """一次性脚本：导出 credit-g 的列/类别 schema，供 data.py 合成降级使用。"""
 import json
 import sys

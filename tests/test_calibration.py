@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """概率校准单元测试：Brier 已知构造值、可靠性分箱、ECE 行为与输入校验。"""
 import numpy as np
 import pandas as pd

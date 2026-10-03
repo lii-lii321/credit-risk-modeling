@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """自实现的 WOE（Weight of Evidence）/ IV（Information Value）编码器。
 
 约定（与评分卡主流教材一致）：
@@ -12,8 +11,6 @@
   不引入人为方向性），并在 fit 阶段记录 missing 是否成箱。
 """
 from __future__ import annotations
-
-from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -63,12 +60,12 @@ class WoEEncoder(BaseEstimator, TransformerMixin):
         if n_bad == 0 or n_good == 0:
             raise ValueError("WOE 编码要求两类样本均非空")
 
-        self.woe_maps_: Dict[str, Dict[str, float]] = {}
-        self.bin_edges_: Dict[str, np.ndarray] = {}
-        self.iv_: Dict[str, float] = {}
-        self.feature_names_out_: List[str] = []
-        self.categorical_columns_: List[str] = []
-        self.numeric_columns_: List[str] = []
+        self.woe_maps_: dict[str, dict[str, float]] = {}
+        self.bin_edges_: dict[str, np.ndarray] = {}
+        self.iv_: dict[str, float] = {}
+        self.feature_names_out_: list[str] = []
+        self.categorical_columns_: list[str] = []
+        self.numeric_columns_: list[str] = []
 
         for col in X.columns:
             s = X[col]
@@ -107,12 +104,12 @@ class WoEEncoder(BaseEstimator, TransformerMixin):
         woe_map, iv = self._compute_woe_iv(bin_ids, labels, y, n_bad, n_good)
         return woe_map, None, iv
 
-    def _compute_woe_iv(self, bin_ids: np.ndarray, labels: List[str], y: pd.Series,
+    def _compute_woe_iv(self, bin_ids: np.ndarray, labels: list[str], y: pd.Series,
                         n_bad: int, n_good: int):
         """给定每个样本的分箱归属，计算各箱 WOE 与总 IV（加法平滑）。"""
         alpha = self.smoothing
         n_bins = len(labels)
-        woe_map: Dict[str, float] = {}
+        woe_map: dict[str, float] = {}
         iv = 0.0
         for label in labels:
             if label == MISSING_BIN:

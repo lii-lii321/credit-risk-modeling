@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """全局配置：路径、随机种子、目标定义与 credit-g 特征 schema。
 
 schema 常量来自 OpenML credit-g (version 1) 的实际导出

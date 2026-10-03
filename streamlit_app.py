@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Streamlit 交互 Demo：单笔信贷评分（PD + top 特征贡献 + 审批阈值）。
 
 本地运行：streamlit run streamlit_app.py
@@ -14,7 +13,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import pandas as pd
 
@@ -29,7 +27,7 @@ from creditrisk.config import ARTIFACTS_DIR, CATEGORY_VALUES, NUM_RANGES  # noqa
 BUNDLE_PATH = ARTIFACTS_DIR / "deploy_bundle.joblib"
 
 # 数值特征滑杆规格：(label, min, max, default, step, help)
-NUMERIC_SPECS: Dict[str, Dict] = {
+NUMERIC_SPECS: dict[str, dict] = {
     "duration": {"label": "贷款期限（月）", "step": 1, "default": 12},
     "credit_amount": {"label": "贷款金额（DM）", "step": 100, "default": 1500},
     "installment_commitment": {"label": "还款收入占比档（1-4）", "step": 1, "default": 2},
@@ -40,7 +38,7 @@ NUMERIC_SPECS: Dict[str, Dict] = {
 }
 
 # 类别特征默认值（与 README/API 示例的优质画像一致，首屏呈现可批准的低风险样例）
-CATEGORICAL_DEFAULTS: Dict[str, str] = {
+CATEGORICAL_DEFAULTS: dict[str, str] = {
     "checking_status": ">=200",
     "credit_history": "existing paid",
     "purpose": "radio/tv",
@@ -56,10 +54,10 @@ CATEGORICAL_DEFAULTS: Dict[str, str] = {
     "foreign_worker": "no",
 }
 
-_BUNDLE_CACHE: Dict[str, dict] = {}
+_BUNDLE_CACHE: dict[str, dict] = {}
 
 
-def load_deploy_bundle(artifacts_dir: Optional[Path] = None) -> dict:
+def load_deploy_bundle(artifacts_dir: Path | None = None) -> dict:
     """加载部署 bundle（进程内缓存）；缺失时抛出带修复指引的 RuntimeError。
 
     纯函数：不依赖 st.*，供 UI 与测试共用。
@@ -76,9 +74,9 @@ def load_deploy_bundle(artifacts_dir: Optional[Path] = None) -> dict:
     return _BUNDLE_CACHE[key]
 
 
-def default_applicant() -> Dict[str, object]:
+def default_applicant() -> dict[str, object]:
     """一组合法的默认申请画像：类别取默认值，数值取各特征默认/下界。"""
-    features: Dict[str, object] = {name: default for name, default in CATEGORICAL_DEFAULTS.items()}
+    features: dict[str, object] = {name: default for name, default in CATEGORICAL_DEFAULTS.items()}
     for name, spec in NUMERIC_SPECS.items():
         lo = NUM_RANGES[name][0]
         value = spec["default"]
@@ -91,7 +89,7 @@ def approval_decision(pd_value: float, threshold: float) -> str:
     return "approve" if pd_value < threshold else "reject"
 
 
-def risk_band(pd_value: float, thresholds: Dict[str, float]) -> str:
+def risk_band(pd_value: float, thresholds: dict[str, float]) -> str:
     if pd_value < thresholds["low_below"]:
         return "low"
     if pd_value < thresholds["medium_below"]:
@@ -99,8 +97,8 @@ def risk_band(pd_value: float, thresholds: Dict[str, float]) -> str:
     return "high"
 
 
-def score_applicant(bundle: dict, features: Dict[str, object], threshold: float,
-                    top_k: int = 3) -> Dict[str, object]:
+def score_applicant(bundle: dict, features: dict[str, object], threshold: float,
+                    top_k: int = 3) -> dict[str, object]:
     """单笔评分纯函数：bundle + 画像 + 阈值 → PD/解释/风险分档/审批决策。
 
     - pd：校准后违约概率（部署口径，可直接解读为概率）；
@@ -155,7 +153,7 @@ if __name__ == "__main__":
 
     with left:
         st.subheader("申请人画像")
-        inputs: Dict[str, object] = {}
+        inputs: dict[str, object] = {}
         for name in meta.get("categorical_features", list(CATEGORICAL_DEFAULTS)):
             inputs[name] = st.selectbox(name, CATEGORY_VALUES[name],
                                         index=CATEGORY_VALUES[name].index(CATEGORICAL_DEFAULTS[name]))

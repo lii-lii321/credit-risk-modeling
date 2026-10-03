@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """公平性审计（描述性测量，不修正）：按 personal_status 分组的部署阈值公平性指标。
 
 背景（README「已知限制」第 2 条曾长期记录"公平性审计未实现"）：gender 经
@@ -26,7 +25,7 @@ personal_status 编码于特征中（"female div/dep/mar" / "male div/sep" /
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
@@ -46,7 +45,7 @@ def _max_min_gap(values) -> float:
     return float(arr.max() - arr.min())
 
 
-def fairness_audit(y_true, y_proba, groups, threshold: float, group_column: str = "") -> Dict:
+def fairness_audit(y_true, y_proba, groups, threshold: float, group_column: str = "") -> dict:
     """按分组计算部署阈值下的公平性指标，返回可直接写入 metrics.json 的报告字典。
 
     参数：
@@ -70,7 +69,7 @@ def fairness_audit(y_true, y_proba, groups, threshold: float, group_column: str 
         raise ValueError("threshold 需在 [0, 1] 内")
 
     approved = p < threshold
-    report: Dict = {
+    report: dict = {
         "group_column": str(group_column),
         "decision_rule": DECISION_RULE,
         "threshold": threshold,
@@ -102,7 +101,7 @@ def fairness_audit(y_true, y_proba, groups, threshold: float, group_column: str 
     return report
 
 
-def fairness_table(report: Dict) -> pd.DataFrame:
+def fairness_table(report: dict) -> pd.DataFrame:
     """分组指标表（每组一行），用于 fairness.csv 与 markdown 渲染。"""
     rows = []
     n_total = report["n_total"]
@@ -121,7 +120,7 @@ def fairness_table(report: Dict) -> pd.DataFrame:
     ])
 
 
-def _extreme_group(report: Dict, metric: str) -> Tuple[Optional[str], Optional[str], float, float]:
+def _extreme_group(report: dict, metric: str) -> tuple[str | None, str | None, float, float]:
     """按指标取（最高组, 最低组, 最高值, 最低值）；全组无定义时返回 (None, None, NaN, NaN)。"""
     pairs = [
         (name, float(v[metric])) for name, v in report["groups"].items()
@@ -134,7 +133,7 @@ def _extreme_group(report: Dict, metric: str) -> Tuple[Optional[str], Optional[s
     return hi[0], lo[0], hi[1], lo[1]
 
 
-def fairness_conclusion(report: Dict) -> str:
+def fairness_conclusion(report: dict) -> str:
     """三行数据驱动结论：选择率 → 等机会/分组 AUC → 审计边界（如实、不粉饰）。"""
     sel_hi, sel_lo, sel_hi_v, sel_lo_v = _extreme_group(report, "selection_rate")
     tpr_hi, tpr_lo, tpr_hi_v, tpr_lo_v = _extreme_group(report, "tpr_good")
@@ -159,7 +158,7 @@ def fairness_conclusion(report: Dict) -> str:
     ])
 
 
-def fairness_markdown(report: Dict) -> str:
+def fairness_markdown(report: dict) -> str:
     """渲染 reports/fairness.md：口径说明 + 分组指标表 + 三行以内文字结论。"""
     tbl = fairness_table(report)
     eo_gap = report["equal_opportunity_gap"]
@@ -189,7 +188,7 @@ def fairness_markdown(report: Dict) -> str:
     return "\n".join(lines)
 
 
-def _sensitivity_tier_label(tier: Dict) -> str:
+def _sensitivity_tier_label(tier: dict) -> str:
     """档位展示名：部署档 / 70% 目标档（数据驱动，不硬编码目标值）。"""
     target = tier.get("target_approval_rate")
     if target is None:
@@ -207,7 +206,7 @@ def fairness_sensitivity(
     deployed_threshold: float,
     approval_targets: Sequence[float] = (0.7, 0.9),
     group_column: str = "",
-) -> Dict:
+) -> dict:
     """三档阈值下的分组公平性敏感性扫描（只测量，不修正）。
 
     档位：
@@ -229,7 +228,7 @@ def fairness_sensitivity(
         raise ValueError("approval_targets 需在 (0, 1) 开区间内")
 
     back = thresholds_for_approval_rates(y_true, y_proba, targets)
-    tiers: List[Dict] = [{
+    tiers: list[dict] = [{
         "label": "deployed",
         "target_approval_rate": None,
         "threshold": deployed_threshold,
@@ -260,7 +259,7 @@ def fairness_sensitivity(
     }
 
 
-def fairness_sensitivity_table(scan: Dict) -> pd.DataFrame:
+def fairness_sensitivity_table(scan: dict) -> pd.DataFrame:
     """三档对比表（每档一行）：阈值、目标/实际整体批准率、各组选择率、DP 差、等机会差。
 
     target_approval_rate 部署档为 NaN（无目标口径，展示层渲染“—”，不虚构 0）。
@@ -287,7 +286,7 @@ def fairness_sensitivity_table(scan: Dict) -> pd.DataFrame:
     ] + [f"sel:{g}" for g in group_order])
 
 
-def fairness_sensitivity_conclusion(scan: Dict) -> str:
+def fairness_sensitivity_conclusion(scan: dict) -> str:
     """三行以内数据驱动结论：阈值松紧 → DP/等机会差距变化 → 始终偏低组 → 审计边界。"""
     tiers = sorted(scan["tiers"], key=lambda t: t["threshold"])
     dps = [float(t["report"]["demographic_parity_gap"]) for t in tiers]
@@ -295,16 +294,16 @@ def fairness_sensitivity_conclusion(scan: Dict) -> str:
     overall = [float(t["report"]["overall_selection_rate"]) for t in tiers]
     labels = [_sensitivity_tier_label(t) for t in tiers]
 
-    def _direction(values: List[float]) -> str:
+    def _direction(values: list[float]) -> str:
         if all(v == values[0] for v in values):
             return "不随阈值松紧变化"
-        if all(b <= a for a, b in zip(values, values[1:])):
+        if all(b <= a for a, b in zip(values, values[1:], strict=False)):
             return "随阈值放松收窄"
-        if all(b >= a for a, b in zip(values, values[1:])):
+        if all(b >= a for a, b in zip(values, values[1:], strict=False)):
             return "随阈值放松扩大"
         return "随阈值松紧非单调变化"
 
-    lowest: List[Optional[str]] = []
+    lowest: list[str | None] = []
     for t in tiers:
         pairs = [
             (g, float(v["selection_rate"]))
@@ -323,11 +322,11 @@ def fairness_sensitivity_conclusion(scan: Dict) -> str:
         )
     else:
         lowest_txt = "选择率最低组随档位变化（" + "、".join(
-            f"{lab}:{g}" for lab, g in zip(labels, lowest)
+            f"{lab}:{g}" for lab, g in zip(labels, lowest, strict=False)
         ) + "）"
 
     tier_txt = "、".join(
-        f"{lab} t={t['threshold']:.4f}" for lab, t in zip(labels, tiers)
+        f"{lab} t={t['threshold']:.4f}" for lab, t in zip(labels, tiers, strict=False)
     )
     return "\n".join([
         f"阈值从紧到松（{tier_txt}，整体批准率 {'→'.join(f'{v:.1%}' for v in overall)}）："
@@ -339,7 +338,7 @@ def fairness_sensitivity_conclusion(scan: Dict) -> str:
     ])
 
 
-def fairness_sensitivity_markdown(scan: Dict) -> str:
+def fairness_sensitivity_markdown(scan: dict) -> str:
     """渲染 reports/fairness_sensitivity.md：口径说明 + 三档对比表 + 三行以内结论。"""
     tbl = fairness_sensitivity_table(scan)
     disp = tbl.astype(object).where(pd.notna(tbl), "—")  # 部署档无目标口径 → “—”

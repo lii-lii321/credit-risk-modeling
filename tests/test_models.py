@@ -1,10 +1,10 @@
-# -*- coding: utf-8 -*-
 """特征管线与模型实验测试（小数据量、快速）。"""
 import numpy as np
 import pandas as pd
 import pytest
 from sklearn.linear_model import LogisticRegression
 
+from creditrisk.data import generate_synthetic_credit
 from creditrisk.features import build_pipeline
 from creditrisk.models import (
     IMBALANCE_STRATEGIES,
@@ -15,7 +15,6 @@ from creditrisk.models import (
     make_pipeline,
     select_best,
 )
-from creditrisk.data import generate_synthetic_credit
 
 
 @pytest.fixture(scope="module")

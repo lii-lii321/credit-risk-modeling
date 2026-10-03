@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """数据层测试：缓存加载、schema 校验、合成降级路径。"""
 import numpy as np
 import pandas as pd

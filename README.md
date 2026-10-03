@@ -44,8 +44,9 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（150 个）
+# 3. 全量测试（150 个）与静态检查
 python -m pytest tests
+ruff check .   # CI lint 门禁（E/F/W/I/B/UP，行宽 120）
 
 # 4. 启动评分服务
 uvicorn app.main:app --port 8000

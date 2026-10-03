@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """阈值-业务指标单元测试：已知构造、单调性与计数守恒、目标反查与输入校验。"""
 import numpy as np
 import pandas as pd
@@ -6,8 +5,8 @@ import pytest
 
 from creditrisk.thresholds import (
     plot_tradeoff_curves,
-    tradeoff_table,
     thresholds_for_approval_rates,
+    tradeoff_table,
 )
 
 

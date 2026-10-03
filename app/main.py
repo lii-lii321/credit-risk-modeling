@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """FastAPI 评分服务：POST /score（违约概率 + 风险分档 + top 特征解释）、GET /health。
 
 启动时优先加载 artifacts/deploy_bundle.joblib（模型 + 校准器 + schema 元数据，
@@ -19,7 +18,7 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import joblib
 import numpy as np
@@ -46,10 +45,10 @@ PIPELINE_PATH = ARTIFACTS_DIR / "pipeline.joblib"
 BUNDLE_PATH = ARTIFACTS_DIR / "deploy_bundle.joblib"
 META_PATH = ARTIFACTS_DIR / "model_meta.json"
 
-_state: Dict[str, Any] = {}
+_state: dict[str, Any] = {}
 
 # 统一错误目录：error 码 → 默认 detail / hint（README 错误码表的单一来源）
-_ERROR_CATALOG: Dict[str, Dict[str, str]] = {
+_ERROR_CATALOG: dict[str, dict[str, str]] = {
     "validation_error": {
         "detail": "请求体校验失败",
         "hint": "detail 中含具体字段与原因；对照 README「评分服务契约」的 20 个特征名"
@@ -129,7 +128,7 @@ def _load_artifacts() -> None:
                        _state["load_error"])
 
 
-def _risk_band(pd_value: float, thresholds: Dict[str, float]) -> str:
+def _risk_band(pd_value: float, thresholds: dict[str, float]) -> str:
     if pd_value < thresholds["low_below"]:
         return "low"
     if pd_value < thresholds["medium_below"]:
@@ -207,7 +206,6 @@ def score(req: ScoreRequest) -> ScoreResponse:
     pipeline = _state.get("pipeline")
     meta = _state.get("meta")
     calibrator = _state.get("calibrator")
-    features = _state.get("bundle_features", FEATURES)
     if pipeline is None or meta is None:
         raise HTTPException(status_code=503, detail=_load_error_detail())
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """请求/响应契约：20 个 credit-g 特征的强校验 Pydantic v2 模型。
 
 类别取值契约来自 creditrisk.config.CATEGORY_VALUES（OpenML credit-g 固定结构），
@@ -6,8 +5,6 @@
 并在 risk_band 之外原样返回解释）。
 """
 from __future__ import annotations
-
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -58,7 +55,7 @@ class TopFeature(BaseModel):
 
 class ScoreResponse(BaseModel):
     probability_of_default: float = Field(..., ge=0.0, le=1.0)
-    probability_of_default_raw: Optional[float] = Field(
+    probability_of_default_raw: float | None = Field(
         None, ge=0.0, le=1.0, description="校准前（原始模型）PD；未部署校准器时为 null"
     )
     calibrated: bool = Field(..., description="PD 是否经过概率校准（isotonic/sigmoid）")

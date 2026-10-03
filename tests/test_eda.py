@@ -1,9 +1,7 @@
-# -*- coding: utf-8 -*-
 """EDA 回归测试：报告图片链接必须指向真实落盘文件；统计量由数据计算而非硬编码。"""
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import numpy as np
 import pandas as pd

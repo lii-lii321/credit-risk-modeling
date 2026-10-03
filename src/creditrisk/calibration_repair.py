@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """PD 校准修正层：在 held-out 预测上拟合 Platt scaling（sigmoid）与 isotonic，
 按验证集 ECE 择优，产出含校准器的部署 bundle。
 
@@ -27,7 +26,6 @@ ECE 0.142）。本模块把该发现修复为部署能力：
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Optional, Tuple
 
 import joblib
 import numpy as np
@@ -63,7 +61,7 @@ class ProbabilityCalibrator:
         self.model_ = None
 
     # ------------------------------------------------------------------ fit
-    def fit(self, raw_proba, y_true) -> "ProbabilityCalibrator":
+    def fit(self, raw_proba, y_true) -> ProbabilityCalibrator:
         y, p = _validate(y_true, raw_proba)
         if len(set(y)) < 2:
             raise ValueError("校准器拟合要求 y_true 同时包含 0/1 两类")
@@ -95,7 +93,7 @@ class ProbabilityCalibrator:
 
     # ---------------------------------------------------------------- utils
     @property
-    def coefficients_(self) -> Dict[str, float]:
+    def coefficients_(self) -> dict[str, float]:
         """sigmoid 的 (a, b)（calibrated = σ(a·logit(p)+b)），isotonic 无此参数。"""
         if self.method != "sigmoid" or self.model_ is None:
             return {}
@@ -119,7 +117,7 @@ def out_of_fold_proba(X: pd.DataFrame, y: pd.Series, make_pipeline_fn,
 
 
 def select_and_fit_calibrator(raw_fit, y_fit, raw_val, y_val,
-                              n_bins: int = 10) -> Tuple[ProbabilityCalibrator, Dict]:
+                              n_bins: int = 10) -> tuple[ProbabilityCalibrator, dict]:
     """在 sel_fit 上分别拟合两种校准器，在 sel_val 上对比 ECE 择优，再用全部数据重拟合。
 
     返回 (部署校准器, 选择报告)。报告记录三方（raw/sigmoid/isotonic）在验证段的
@@ -130,8 +128,8 @@ def select_and_fit_calibrator(raw_fit, y_fit, raw_val, y_val,
     y_v, p_v = _validate(y_val, raw_val)
     y_f, p_f = _validate(y_fit, raw_fit)
 
-    candidates: Dict[str, ProbabilityCalibrator] = {}
-    report: Dict = {
+    candidates: dict[str, ProbabilityCalibrator] = {}
+    report: dict = {
         "selection_fit_n": int(len(y_f)),
         "selection_valid_n": int(len(y_v)),
         "n_bins": int(n_bins),
@@ -159,7 +157,7 @@ def calibrate_pipeline(pipeline, X_train: pd.DataFrame, y_train: pd.Series,
                        make_pipeline_fn, n_splits: int = 5,
                        random_state: int = RANDOM_STATE,
                        selection_frac: float = 0.5,
-                       n_bins: int = 10) -> Tuple[ProbabilityCalibrator, Dict, Dict]:
+                       n_bins: int = 10) -> tuple[ProbabilityCalibrator, dict, dict]:
     """端到端校准修复：OOF 预测 → 择优 → 测试集校准前后指标。
 
     返回 (部署校准器, selection 报告, test 对比指标)。
@@ -197,7 +195,7 @@ def calibrate_pipeline(pipeline, X_train: pd.DataFrame, y_train: pd.Series,
 
 
 # ------------------------------------------------------------------- bundle
-def apply_calibrated_proba(calibrator: Optional["ProbabilityCalibrator"], raw_proba) -> np.ndarray:
+def apply_calibrated_proba(calibrator: ProbabilityCalibrator | None, raw_proba) -> np.ndarray:
     """部署口径：有校准器则变换，无则原样返回（float / ndarray 输入皆可）。"""
     raw = np.atleast_1d(np.asarray(raw_proba, dtype=float))
     if calibrator is None:
@@ -205,7 +203,7 @@ def apply_calibrated_proba(calibrator: Optional["ProbabilityCalibrator"], raw_pr
     return calibrator.apply(raw)
 
 
-def build_bundle(pipeline, calibrator: Optional[ProbabilityCalibrator], meta: Dict) -> Dict:
+def build_bundle(pipeline, calibrator: ProbabilityCalibrator | None, meta: dict) -> dict:
     """组装部署 bundle：模型管线 + 校准器 + 特征 schema 元数据。"""
     required = ("features",)
     missing = [k for k in required if k not in meta]
@@ -218,14 +216,14 @@ def build_bundle(pipeline, calibrator: Optional[ProbabilityCalibrator], meta: Di
     }
 
 
-def save_bundle(path: Path, bundle: Dict) -> Path:
+def save_bundle(path: Path, bundle: dict) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(bundle, path)
     return path
 
 
-def load_bundle(path: Path) -> Dict:
+def load_bundle(path: Path) -> dict:
     """加载部署 bundle；文件缺失时抛出带修复指引的 RuntimeError（供 UI 呈现）。"""
     path = Path(path)
     if not path.exists():

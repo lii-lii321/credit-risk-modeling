@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """诚实降级的真实可达性测试：在子进程中屏蔽 shap，验证
 
 1. creditrisk.explain 的 SHAP_AVAILABLE 变为 False，global_importance 自动

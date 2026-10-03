@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """自实现的 PSI（Population Stability Index）特征漂移检验。
 
 定义：PSI = Σ ( actual%_i - expected%_i ) * ln( actual%_i / expected%_i )
@@ -9,8 +8,6 @@
 - 经验判读：<0.1 稳定，0.1-0.25 中度漂移需关注，>0.25 显著漂移。
 """
 from __future__ import annotations
-
-from typing import Optional
 
 import numpy as np
 import pandas as pd

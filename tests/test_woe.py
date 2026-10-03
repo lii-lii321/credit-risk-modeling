@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """WoEEncoder 单元测试：编码方向、IV 单调性、未见类别与缺失值鲁棒性。"""
 import numpy as np
 import pandas as pd

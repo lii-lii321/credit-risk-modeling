@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """EDA：缺失/分布/相关性/类别-违约率图表，输出到 reports/。
 
 图表文字统一使用英文，规避 matplotlib 中文字体缺字问题；
@@ -7,7 +6,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import matplotlib
 
@@ -62,7 +60,7 @@ def plot_missing_and_dtypes(X: pd.DataFrame, out_dir: Path) -> Path:
 def plot_numeric_distributions(X: pd.DataFrame, y: pd.Series, out_dir: Path) -> Path:
     """数值特征按违约分组的分布（KDE）。"""
     fig, axes = plt.subplots(2, 4, figsize=(16, 7))
-    for ax, col in zip(axes.ravel(), NUM_FEATURES):
+    for ax, col in zip(axes.ravel(), NUM_FEATURES, strict=False):
         for label, color in [(0, "#2563eb"), (1, "#dc2626")]:
             values = X.loc[y == label, col]
             sns.kdeplot(values, ax=ax, color=color, fill=True, alpha=0.3, label=f"y={label}")
@@ -82,7 +80,7 @@ def plot_categorical_default_rates(X: pd.DataFrame, y: pd.Series, out_dir: Path,
     order = sorted(rates, key=lambda c: rates[c].max() - rates[c].min(), reverse=True)[:top_k]
     fig, axes = plt.subplots(2, 3, figsize=(16, 8))
     overall = float(y.mean())
-    for ax, col in zip(axes.ravel(), order):
+    for ax, col in zip(axes.ravel(), order, strict=False):
         r = rates[col].sort_values(ascending=False)
         ax.bar(r.index, r.values, color="#1a365d")
         ax.axhline(overall, color="#dc2626", linestyle="--", label=f"overall {overall:.0%}")
@@ -102,7 +100,7 @@ def plot_numeric_correlation(X: pd.DataFrame, out_dir: Path) -> Path:
     return _save(fig, out_dir, "eda_numeric_correlation.png")
 
 
-def run_eda(df: pd.DataFrame, out_dir: Optional[Path] = None) -> dict:
+def run_eda(df: pd.DataFrame, out_dir: Path | None = None) -> dict:
     """完整 EDA：生成全部图表并返回关键统计量（供 summary/README 引用）。"""
     out_dir = Path(out_dir)
     X, y = df.drop(columns=[TARGET_COL]), df[TARGET_COL]
@@ -141,7 +139,7 @@ def run_eda(df: pd.DataFrame, out_dir: Optional[Path] = None) -> dict:
         f"- 样本量：{stats['n_rows']} 行 × {stats['n_features']} 特征；"
         f"违约率 {stats['bad_rate']:.1%}（{n_bad}/{stats['n_rows']}）",
         f"- 缺失值总数：{stats['total_missing']}（{missing_note}）",
-        f"- 数值特征最大|相关系数|：{stats['max_abs_corr']:.2f}（{stats['top_corr_pair'][0]} vs {stats['top_corr_pair'][1]}），共线性风险低",
+        f"- 数值特征最大|相关系数|：{stats['max_abs_corr']:.2f}（{stats['top_corr_pair'][0]} vs {stats['top_corr_pair'][1]}），共线性风险低",  # noqa: E501 —— 长中文文案，隐式拼接拆行易引入字符差异
         "",
         "## 图表",
         "",

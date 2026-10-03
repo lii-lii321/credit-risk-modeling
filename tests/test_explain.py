@@ -1,7 +1,5 @@
-# -*- coding: utf-8 -*-
 """可解释性测试：SHAP 路径、线性降级路径、permutation 全局降级路径。"""
 import numpy as np
-import pandas as pd
 import pytest
 from sklearn.linear_model import LogisticRegression
 

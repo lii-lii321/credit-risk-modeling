@@ -1,12 +1,11 @@
-# -*- coding: utf-8 -*-
 """校准修正层测试：sigmoid/isotonic 行为、择优协议、bundle 序列化往返、
 以及固定 seed 的真实数据全流程断言「校准后 ECE < 校准前 ECE」。
 """
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import pytest
+from sklearn.linear_model import LogisticRegression
 
 from creditrisk.calibration import expected_calibration_error
 from creditrisk.calibration_repair import (
@@ -23,7 +22,6 @@ from creditrisk.calibration_repair import (
 from creditrisk.data import load_credit_data
 from creditrisk.features import build_pipeline
 from creditrisk.models import fit_deployable_pipeline, make_pipeline
-from sklearn.linear_model import LogisticRegression
 
 
 @pytest.fixture(scope="module")

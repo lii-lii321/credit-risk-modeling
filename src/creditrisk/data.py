@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """数据加载层：OpenML credit-g → 本地缓存 → schema 一致的合成降级。
 
 加载优先级（保证离线可复现、断网可用）：
@@ -12,7 +11,6 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -69,7 +67,7 @@ def _normalize(X: pd.DataFrame, y: pd.Series) -> Dataset:
     return Dataset(X=X[FEATURES], y=_coerce_target(y))
 
 
-def load_credit_data(cache_path: Optional[Path] = RAW_DATA_PATH) -> Dataset:
+def load_credit_data(cache_path: Path | None = RAW_DATA_PATH) -> Dataset:
     """加载 credit-g：缓存 → 在线拉取 → 合成降级。"""
     if cache_path is not None and Path(cache_path).exists():
         cached = pd.read_csv(cache_path)

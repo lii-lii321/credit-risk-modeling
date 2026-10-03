@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """阈值-业务指标：给定批准阈值下的批准率与批内/拒件坏账率。
 
 模型输出 PD 后，业务真正执行的是"在阈值 t 处批准多少、批准的人群坏多少"。
@@ -14,8 +13,8 @@
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import matplotlib
 

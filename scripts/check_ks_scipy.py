@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """开发期校验脚本：自实现 KS 与 scipy.stats.ks_2samp 交叉验证。"""
 import sys
 

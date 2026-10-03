@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """API 错误规范化契约测试：所有非 2xx 统一返回 {"error", "detail", "hint"} 三键结构。
 
 覆盖分支：422 校验失败（类别非法/缺字段）、404 未知路径、405 方法不允许、
@@ -11,10 +10,10 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from test_api import GOOD_APPLICANT
 
 from app import main as api_main
 from app.main import app
-from test_api import GOOD_APPLICANT
 
 
 @pytest.fixture(scope="module")

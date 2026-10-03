@@ -1,10 +1,9 @@
-# -*- coding: utf-8 -*-
 """PSI 单元测试：恒等分布、漂移分布、类别列与零频次鲁棒性。"""
 import numpy as np
 import pandas as pd
 import pytest
 
-from creditrisk.psi import psi, psi_categorical, psi_numeric, psi_table, max_psi
+from creditrisk.psi import max_psi, psi, psi_categorical, psi_numeric, psi_table
 
 
 def test_identical_distribution_psi_near_zero():

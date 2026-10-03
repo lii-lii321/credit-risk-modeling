@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """免训练重渲染一页式 HTML 训练报告（reports/report.html）。
 
 直接读取已提交/已有的 artifacts/metrics.json、artifacts/model_meta.json 与

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """概率校准：Brier 分数、等频分桶可靠性表与期望校准误差（ECE）。
 
 AUC/KS 只衡量排序能力（坏样本分数是否整体更低），不约束分数的绝对值；
@@ -15,8 +14,8 @@ AUC/KS 只衡量排序能力（坏样本分数是否整体更低），不约束�
 """
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence, Tuple
 
 import matplotlib
 
@@ -27,7 +26,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
 
-def _validate(y_true, y_proba) -> Tuple[np.ndarray, np.ndarray]:
+def _validate(y_true, y_proba) -> tuple[np.ndarray, np.ndarray]:
     """输入校验：同长非空、标签 0/1、概率在 [0, 1]。"""
     y = np.asarray(y_true).astype(int)
     p = np.asarray(y_proba, dtype=float)
@@ -92,7 +91,7 @@ def expected_calibration_error(y_true, y_proba, n_bins: int = 10) -> float:
 
 
 def plot_reliability_diagram(
-    series: Sequence[Tuple[str, object, object]],
+    series: Sequence[tuple[str, object, object]],
     out_path: Path,
     n_bins: int = 10,
 ) -> Path:

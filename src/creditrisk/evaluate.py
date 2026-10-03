@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """评价指标：AUC、Gini 与自实现的 KS 统计量。
 
 KS（Kolmogorov-Smirnov）定义：max_s | F_bad(s) - F_good(s) |，
@@ -7,7 +6,6 @@ KS（Kolmogorov-Smirnov）定义：max_s | F_bad(s) - F_good(s) |，
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 from sklearn.metrics import roc_auc_score
 
 DEFAULT_EPSILON = 1e-6

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """一页式 HTML 训练报告渲染器（单文件自包含、纯静态、零 JS、零外网资源）。
 
 把训练全链路聚合为单页 reports/report.html，章节顺序固定：
@@ -21,9 +20,9 @@ import html as _html
 import json
 import math
 import re
+from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
 
 import pandas as pd
 
@@ -98,7 +97,7 @@ def _signed(value, spec: str = ".3f") -> str:
     return ("+" if v >= 0 else "−") + format(abs(v), spec)
 
 
-def _sub(a, b) -> Optional[float]:
+def _sub(a, b) -> float | None:
     try:
         x, y = float(a), float(b)
     except (TypeError, ValueError):
@@ -108,7 +107,7 @@ def _sub(a, b) -> Optional[float]:
     return x - y
 
 
-def _img_src(path: Path) -> Optional[str]:
+def _img_src(path: Path) -> str | None:
     """PNG → base64 data URI；文件不存在返回 None（如实省略，不放占位图）。"""
     path = Path(path)
     if not path.is_file():
@@ -143,7 +142,7 @@ def _table(headers: Sequence[str], rows: Sequence[Sequence[str]], highlight: int
 # ------------------------------------------------------------ README 限制解析
 
 
-def extract_readme_limitations(readme_text: str) -> List[str]:
+def extract_readme_limitations(readme_text: str) -> list[str]:
     """解析 README「已知限制」章节的编号条目（跨行合并为一条）；找不到返回空表。"""
     lines = readme_text.splitlines()
     start = -1
@@ -154,8 +153,8 @@ def extract_readme_limitations(readme_text: str) -> List[str]:
             break
     if start < 0:
         return []
-    items: List[str] = []
-    current: Optional[str] = None
+    items: list[str] = []
+    current: str | None = None
     for line in lines[start:]:
         s = line.strip()
         if s.startswith("#"):  # 下一个章节标题 → 结束
@@ -175,7 +174,7 @@ def extract_readme_limitations(readme_text: str) -> List[str]:
 # ------------------------------------------------------------------ sections
 
 
-def _section_data(metrics: Dict) -> str:
+def _section_data(metrics: dict) -> str:
     source_raw = metrics.get("data_source", "")
     source_label = _SOURCE_LABELS.get(str(source_raw), _esc(source_raw) or "—")
     train_n = int(metrics.get("train_size") or 0)
@@ -235,7 +234,7 @@ def _section_features(reports_dir: Path) -> str:
     return "\n".join(parts)
 
 
-def _section_models(metrics: Dict, reports_dir: Path) -> str:
+def _section_models(metrics: dict, reports_dir: Path) -> str:
     parts = ['<h2 id="s3">③ 模型对比（LR vs LightGBM × none/weight/SMOTE）</h2>']
     experiments = metrics.get("experiments") or []
     selected = metrics.get("selected") or {}
@@ -275,7 +274,7 @@ def _section_models(metrics: Dict, reports_dir: Path) -> str:
     )
 
     # 不平衡策略读数（同一模型下 weight vs smote 的 CV AUC 差距，数据驱动）
-    by_model: Dict[str, Dict[str, float]] = {}
+    by_model: dict[str, dict[str, float]] = {}
     for e in experiments:
         by_model.setdefault(str(e.get("model")), {})[str(e.get("strategy"))] = float(
             e.get("cv_auc_mean") or float("nan")
@@ -325,7 +324,7 @@ def _section_models(metrics: Dict, reports_dir: Path) -> str:
     return "\n".join(parts)
 
 
-def _section_calibration(metrics: Dict, reports_dir: Path) -> str:
+def _section_calibration(metrics: dict, reports_dir: Path) -> str:
     parts = ['<h2 id="s4">④ 概率校准：发现 → 修复 → 复测</h2>']
     cal = metrics.get("calibration") or {}
     dep = cal.get("deployed") or {}
@@ -363,7 +362,7 @@ def _section_calibration(metrics: Dict, reports_dir: Path) -> str:
         '<div class="step"><span class="tag">修复</span>'
         "<p>协议（防泄漏）：训练集 5 折分层 CV 产出 OOF held-out 预测 → 拟合 sigmoid 与 isotonic，"
         "验证段按 ECE 择优，择优者用全部 OOF 重拟合为部署校准器；测试集只做单调变换，"
-        f"绝不参与校准器拟合。</p>"
+        "绝不参与校准器拟合。</p>"
         + _table(["候选（验证段）", "ECE ↓", "Brier ↓", "择优"], sel_rows)
         + f'<p class="note">选中方法：{_esc(repair.get("method", "—"))}{coef_txt}</p></div>'
     )
@@ -408,7 +407,7 @@ def _section_calibration(metrics: Dict, reports_dir: Path) -> str:
     return "\n".join(parts)
 
 
-def _section_thresholds(metrics: Dict, reports_dir: Path) -> str:
+def _section_thresholds(metrics: dict, reports_dir: Path) -> str:
     parts = ['<h2 id="s5">⑤ 阈值-业务扫描（批准率 / 坏账率）</h2>']
     trade = metrics.get("threshold_tradeoff") or {}
     targets = trade.get("targets") or []
@@ -454,7 +453,7 @@ def _section_thresholds(metrics: Dict, reports_dir: Path) -> str:
     return "\n".join(parts)
 
 
-def _section_fairness(metrics: Dict) -> str:
+def _section_fairness(metrics: dict) -> str:
     parts = ['<h2 id="s6">⑥ 公平性审计（personal_status 分组，只测量不修正）</h2>']
     fair = metrics.get("fairness") or {}
     groups = fair.get("groups") or {}
@@ -531,9 +530,9 @@ def _section_fairness(metrics: Dict) -> str:
     return "\n".join(parts)
 
 
-def _section_limitations(readme_path: Optional[Path]) -> str:
+def _section_limitations(readme_path: Path | None) -> str:
     parts = ['<h2 id="s7">⑦ 已知限制（与 README 同步）</h2>']
-    items: List[str] = []
+    items: list[str] = []
     if readme_path and Path(readme_path).is_file():
         items = extract_readme_limitations(Path(readme_path).read_text(encoding="utf-8"))
     if items:
@@ -602,11 +601,11 @@ _TOC = (
 
 
 def render_html_report(
-    metrics: Dict,
+    metrics: dict,
     reports_dir: Path,
     out_path: Path,
-    meta: Optional[Dict] = None,
-    readme_path: Optional[Path] = None,
+    meta: dict | None = None,
+    readme_path: Path | None = None,
 ) -> Path:
     """把训练指标与既有产物聚合渲染为单页自包含 HTML，写入 out_path 并返回。
 
@@ -688,8 +687,8 @@ def render_html_report(
     return out_path
 
 
-def rerender_from_artifacts(project_root: Optional[Path] = None,
-                            out_path: Optional[Path] = None) -> Path:
+def rerender_from_artifacts(project_root: Path | None = None,
+                            out_path: Path | None = None) -> Path:
     """从既有 artifacts/ + reports/ 产物重渲染报告，不加载模型、不重复训练。"""
     root = Path(project_root) if project_root else PROJECT_ROOT
     metrics = json.loads(
