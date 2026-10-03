@@ -7,6 +7,7 @@
   model_meta.json、metrics.json
 - reports/model_comparison.csv、iv_table.csv、shap_*.csv/png、
   calibration_table.csv（校准前/后/参照三组）、calibration_curve.png、
+  fairness.csv / fairness.md（personal_status 分组公平性审计）、
   stability_report.md、training_report.md
 """
 from __future__ import annotations
@@ -55,6 +56,7 @@ from creditrisk.calibration_repair import (  # noqa: E402
 from creditrisk.data import load_credit_data  # noqa: E402
 from creditrisk.evaluate import evaluate_predictions  # noqa: E402
 from creditrisk.explain import SHAP_AVAILABLE, explain_instance, global_importance  # noqa: E402
+from creditrisk.fairness import fairness_audit, fairness_markdown, fairness_table  # noqa: E402
 from creditrisk.models import (  # noqa: E402
     fit_deployable_pipeline,
     make_pipeline,
@@ -218,6 +220,26 @@ def main() -> None:
     log("阈值-业务指标（目标批准率 70/80/90%）：")
     log(tradeoff_targets.to_string(index=False))
 
+    # ------------------------------------------------------- fairness audit
+    # 公平性审计（描述性，只测量不修正）：在测试集（n=200，复用训练管线现有切分
+    # 与预测，不重新建模）上按 personal_status（含性别编码）分组，统计部署阈值
+    # （校准后 PD < t_low，即低风险档=批准，与 API/线上同尺度）下的：
+    # 分组样本量与实际违约率、选择率与 demographic parity 差距、
+    # 等机会差距（各组 TPR = 批准|实际正常）、分组 AUC。
+    # 未做再平衡/去偏/受保护属性移除；小样本组读数噪声大，不构成合规结论。
+    log("公平性审计：按 personal_status 分组（部署阈值=校准后 PD < t_low）…")
+    fairness = fairness_audit(
+        y_test, calibrated_test_proba, X_test["personal_status"],
+        threshold=float(t_low), group_column="personal_status",
+    )
+    fairness_tbl = fairness_table(fairness)
+    fairness_tbl.to_csv(REPORTS_DIR / "fairness.csv", index=False)
+    (REPORTS_DIR / "fairness.md").write_text(fairness_markdown(fairness), encoding="utf-8")
+    log("公平性分组指标：")
+    log(fairness_tbl.to_string(index=False))
+    log(f"demographic parity 差距={fairness['demographic_parity_gap']:.4f}，"
+        f"等机会差距={fairness['equal_opportunity_gap']:.4f}")
+
 
     # ------------------------------------------------------------- IV
     woe = WoEEncoder(n_bins=10).fit(X_train, y_train)
@@ -276,6 +298,7 @@ def main() -> None:
         "final_test_metrics": final_metrics,
         "calibration": calibration,
         "threshold_tradeoff": threshold_tradeoff,
+        "fairness": fairness,
         "global_importance_method": shap_method,
         "deployed_model_local_explanation": (
             ("shap" if best_model == "lightgbm" else "coef_x_woe_deviation")

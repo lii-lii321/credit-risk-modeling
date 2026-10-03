@@ -443,6 +443,46 @@
       }
     ]
   },
+  "fairness": {
+    "group_column": "personal_status",
+    "decision_rule": "approve if PD < threshold",
+    "threshold": 0.31673603083024254,
+    "n_total": 200,
+    "overall_bad_rate": 0.3,
+    "overall_selection_rate": 0.6,
+    "groups": {
+      "male mar/wid": {
+        "n": 12,
+        "bad_rate": 0.25,
+        "selection_rate": 0.6666666666666666,
+        "tpr_good": 0.7777777777777778,
+        "auc": 0.7407407407407407
+      },
+      "male single": {
+        "n": 118,
+        "bad_rate": 0.288135593220339,
+        "selection_rate": 0.6694915254237288,
+        "tpr_good": 0.8214285714285714,
+        "auc": 0.8074229691876751
+      },
+      "female div/dep/mar": {
+        "n": 61,
+        "bad_rate": 0.32786885245901637,
+        "selection_rate": 0.4918032786885246,
+        "tpr_good": 0.6341463414634146,
+        "auc": 0.8182926829268293
+      },
+      "male div/sep": {
+        "n": 9,
+        "bad_rate": 0.3333333333333333,
+        "selection_rate": 0.3333333333333333,
+        "tpr_good": 0.5,
+        "auc": 0.8333333333333334
+      }
+    },
+    "demographic_parity_gap": 0.3361581920903955,
+    "equal_opportunity_gap": 0.3214285714285714
+  },
   "global_importance_method": "shap_mean_abs(lightgbm+weight)",
   "deployed_model_local_explanation": "coef_x_woe_deviation",
   "local_example": {

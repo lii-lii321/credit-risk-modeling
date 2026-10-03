@@ -10,7 +10,7 @@ SHAP 可解释性与 FastAPI 评分服务。
 ![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/pytest-118%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/pytest-133%20passed-brightgreen)
 
 ![demo](docs/demo.gif)
 
@@ -44,7 +44,7 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（118 个）
+# 3. 全量测试（133 个）
 python -m pytest tests
 
 # 4. 启动评分服务
@@ -186,6 +186,27 @@ API 与 Streamlit Demo 均从 bundle 加载。
 完整扫描（PD 十分位）见 [reports/threshold_tradeoff.csv](reports/threshold_tradeoff.csv)，
 曲线见 [reports/threshold_tradeoff.png](reports/threshold_tradeoff.png)。
 
+### 公平性审计（personal_status 分组）
+
+`personal_status` 含性别编码（见「已知限制」2）。在独立测试集（n=200，与训练管线同一切分
+与预测，seed=42）上按部署决策规则（批准 = 校准后 PD < 0.317，整体批准率 60%）分组实测
+（scripts/run_training.py 产出，完整表见 [reports/fairness.md](reports/fairness.md) /
+[reports/fairness.csv](reports/fairness.csv) 与 metrics.json 的 `fairness` 字段）：
+
+| 分组 | n | 实际违约率 | 选择率（批准率） | TPR（批准\|实际正常） | 组内 AUC |
+|---|---:|---:|---:|---:|---:|
+| male single | 118 | 28.8% | **66.9%** | **82.1%** | 0.807 |
+| male mar/wid | 12 | 25.0% | 66.7% | 77.8% | 0.741 |
+| female div/dep/mar | 61 | 32.8% | 49.2% | 63.4% | 0.818 |
+| male div/sep | 9 | 33.3% | 33.3% | 50.0% | 0.833 |
+
+**如实记录的差距**：demographic parity 差距 **0.336**、等机会差距 **0.321**。
+唯一的女性组（female div/dep/mar，n=61）批准率 49.2%，比最大的 male single 组
+（66.9%）低 **17.8 个百分点**；即便只看实际正常的申请人，该组获批率（63.4%）也明显低于
+male single（82.1%）。差距部分反映该组实际违约率更高（32.8% vs 28.8%），但 male div/sep
+违约率 33.3% 批准率却只有 33.3%（n=9，噪声大）。**本项目只做描述性审计，未做再平衡、
+去偏或受保护属性移除，不构成合规结论**；最小组仅 9 条，读数受抽样噪声影响。
+
 ### 评分服务契约
 
 - `POST /score`：20 特征 JSON（Pydantic v2 强校验：类别取值白名单，非法值 422；
@@ -222,12 +243,12 @@ streamlit 只做薄壳）。单测见 tests/test_streamlit_app.py（9 个：impo
 ```
 credit-risk-modeling/
 ├── streamlit_app.py       # Streamlit 交互 Demo（纯函数评分 + 薄壳 UI）
-├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / calibration_repair / thresholds / models / explain / eda
+├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / calibration_repair / fairness / thresholds / models / explain / eda
 ├── app/                   # FastAPI 服务（schemas + main，加载部署 bundle）
 ├── scripts/               # run_eda.py / run_training.py / 检查脚本
-├── tests/                 # 118 个 pytest（单元 + API 契约 + Demo 冒烟）
+├── tests/                 # 133 个 pytest（单元 + API 契约 + Demo 冒烟）
 ├── artifacts/             # pipeline.joblib + deploy_bundle.joblib（模型+校准器+schema 元数据）+ model_meta.json + metrics.json（随仓库提交）
-├── reports/               # EDA/训练/稳定性报告与图表（随仓库提交）
+├── reports/               # EDA/训练/稳定性/公平性审计报告与图表（随仓库提交）
 ├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
 └── .github/workflows/ci.yml
 ```
@@ -246,9 +267,13 @@ credit-risk-modeling/
 
 1. **数据规模与年代**：credit-g 仅 1000 条、20 特征，且为 1990 年代德国信贷档案数据；
    指标不能外推到现代信贷组合，仅用于方法链路演示。
-2. **合规视角未完成**：真实信贷建模需排除或约束受保护属性（gender 经 `personal_status`
-   编码于特征中）并做公平性审计（如 demographic parity / equal opportunity）。
-   本项目在报告中指出但**未实现**公平性约束，不建议直接用于任何真实决策。
+2. **合规视角：已实现基础公平性审计，未做再平衡/去偏处理**：gender 经 `personal_status`
+   编码于特征中（模型可见受保护属性）。本项目已在其测试集切分上按 personal_status 分组
+   实测 demographic parity / equal opportunity / 分组 AUC（真实数字见
+   [reports/fairness.md](reports/fairness.md) 与 metrics.json 的 `fairness` 字段，
+   实测 DP 差距 0.336、等机会差距 0.321，女性组批准率显著偏低，如实记录不作粉饰）；
+   但**未实现任何公平性约束或修正**（再平衡、去偏、受保护属性移除/约束均未做），
+   审计为描述性测量，不建议直接用于任何真实决策。
 3. **AUC ≈ 0.80 的天花板**：与公开基准一致，credit-g 信息量有限；未做超参搜索
    （LightGBM 用固定参数），深度调参可能再提升 1-2 个点，非本项目重点。
 4. **单样本解释的两套口径**：部署模型（LR）归因是 coef×WOE 偏移，全局重要性是 LightGBM
