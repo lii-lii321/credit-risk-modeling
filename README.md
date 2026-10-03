@@ -12,6 +12,8 @@ SHAP 可解释性与 FastAPI 评分服务。
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Tests](https://img.shields.io/badge/pytest-118%20passed-brightgreen)
 
+![demo](docs/demo.gif)
+
 ---
 
 ## 架构
