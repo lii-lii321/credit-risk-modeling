@@ -75,6 +75,8 @@ class HealthResponse(BaseModel):
     model_version: str
     model: str
     trained_at: str
+    calibrated: bool = Field(..., description="是否加载了概率校准器（deploy_bundle.joblib）")
+    calibration_method: str = Field(..., description="校准方法：isotonic / sigmoid / none")
 
 
 def numeric_features() -> list[str]:

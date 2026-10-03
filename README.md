@@ -44,7 +44,7 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（137 个）
+# 3. 全量测试（143 个）
 python -m pytest tests
 
 # 4. 启动评分服务
@@ -215,7 +215,44 @@ male single（82.1%）。差距部分反映该组实际违约率更高（32.8% v
 - PD 输出为**校准后概率**（sigmoid），平均预测 PD 0.301 vs 实际违约率 0.300（见「概率校准」③）；
 - 风险分档阈值取测试集校准后 PD 的 60%/85% 分位：low < 0.317 ≤ medium < 0.556 ≤ high
   （与校准前尺度 0.506/0.792 在排序意义下一一对应）；
-- `GET /health`：版本与训练时间。API 测试 9 个（tests/test_api.py）。
+- `GET /health`：版本、训练时间与校准标记（`calibrated` / `calibration_method`）；
+- 模型产物缺失/损坏时服务以降级模式启动，`/score` 与 `/health` 返回 503（不崩溃退出）；
+- API 契约测试 15 个（tests/test_api.py 9 个 + tests/test_api_errors.py 6 个）。
+
+**统一错误响应**：所有非 2xx 返回三键结构
+`{"error": "<机器可读码>", "detail": "<人话说明>", "hint": "<怎么修>"}`。
+
+| error 码 | HTTP | 含义 | 修法 |
+|---|---|---|---|
+| `validation_error` | 422 | 请求体校验失败（缺字段 / 类别不在白名单 / 数值为负） | `detail` 含具体字段与原因；对照本节特征契约修正请求体 |
+| `model_unavailable` | 503 | 模型产物缺失或加载失败 | 运行 `python scripts/run_training.py` 生成 artifacts/ 后重启服务 |
+| `not_found` | 404 | 路径不存在 | 可用端点：`POST /score`、`GET /health`、`GET /docs` |
+| `method_not_allowed` | 405 | HTTP 方法不支持 | `/score` 仅接受 POST，`/health` 仅接受 GET |
+| `internal_error` | 500 | 服务器内部错误（响应不含堆栈细节，完整堆栈只进服务端日志） | 重试；持续失败请附带请求时间提 issue |
+
+**复制即用示例**（服务启动后，Git Bash / Linux / macOS）：
+
+```bash
+# 1. 健康检查：返回模型版本、训练时间与校准标记
+curl http://127.0.0.1:8000/health
+
+# 2. 评分请求：20 个特征名与类别取值均逐字取自训练 schema（src/creditrisk/config.py）
+curl -X POST http://127.0.0.1:8000/score -H "Content-Type: application/json" -d '{
+  "checking_status": ">=200", "duration": 12, "credit_history": "existing paid",
+  "purpose": "radio/tv", "credit_amount": 1500, "savings_status": ">=1000",
+  "employment": ">=7", "installment_commitment": 1,
+  "personal_status": "male single", "other_parties": "none",
+  "residence_since": 4, "property_magnitude": "real estate",
+  "age": 45, "other_payment_plans": "none", "housing": "own",
+  "existing_credits": 1, "job": "skilled", "num_dependents": 1,
+  "own_telephone": "yes", "foreign_worker": "no"
+}'
+
+# 3. 错误响应示例（类别不在白名单时）
+# {"error": "validation_error", "detail": "请求体校验失败 → checking_status: Value error, ...", "hint": "..."}
+```
+
+> 演示级服务：无鉴权 / 无限流，生产部署需补齐（见「已知限制」6）。
 
 ## 一页式训练报告
 
@@ -255,7 +292,7 @@ credit-risk-modeling/
 ├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / calibration_repair / fairness / thresholds / models / explain / eda / html_report
 ├── app/                   # FastAPI 服务（schemas + main，加载部署 bundle）
 ├── scripts/               # run_eda.py / run_training.py / render_report.py / 检查脚本
-├── tests/                 # 137 个 pytest（单元 + API 契约 + Demo 冒烟 + 报告渲染）
+├── tests/                 # 143 个 pytest（单元 + API 契约/错误规范化 + Demo 冒烟 + 报告渲染）
 ├── artifacts/             # pipeline.joblib + deploy_bundle.joblib（模型+校准器+schema 元数据）+ model_meta.json + metrics.json（随仓库提交）
 ├── reports/               # EDA/训练/稳定性/公平性审计报告与图表 + 一页式 report.html（随仓库提交）
 ├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
