@@ -10,7 +10,7 @@ SHAP 可解释性与 FastAPI 评分服务。
 ![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/pytest-109%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/pytest-118%20passed-brightgreen)
 
 ---
 
@@ -42,13 +42,16 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（109 个）
+# 3. 全量测试（118 个）
 python -m pytest tests
 
 # 4. 启动评分服务
 uvicorn app.main:app --port 8000
 
-# 5. 评分示例
+# 5. 交互式 Demo（可选）
+streamlit run streamlit_app.py
+
+# 6. 评分示例
 curl -X POST http://127.0.0.1:8000/score -H "Content-Type: application/json" -d '{
   "checking_status": "<0", "duration": 48, "credit_history": "delayed previously",
   "purpose": "new car", "credit_amount": 12000, "savings_status": "<100",
@@ -191,14 +194,36 @@ API 与 Streamlit Demo 均从 bundle 加载。
   （与校准前尺度 0.506/0.792 在排序意义下一一对应）；
 - `GET /health`：版本与训练时间。API 测试 9 个（tests/test_api.py）。
 
+## 交互 Demo（Streamlit）
+
+单笔评分演示：滑杆/选择框输入 20 维画像 → 校准后 PD 大字展示 +
+top 特征贡献（coef×WOE，与训练报告同口径）+ 审批阈值滑杆实时给出 批准/拒绝。
+
+```bash
+# 本地运行（模型产物已随仓库提交在 artifacts/，无需先训练）
+streamlit run streamlit_app.py
+```
+
+**Streamlit Community Cloud 一键部署**（免费托管）：
+
+1. fork 或使用本仓库，登录 [share.streamlit.io](https://share.streamlit.io)；
+2. New app → 选择本仓库与 `main` 分支；
+3. Main file path 填 `streamlit_app.py` → Deploy；
+4. 模型产物 `artifacts/deploy_bundle.joblib` 已在仓库内，Cloud 直接加载，无需额外配置。
+
+评分逻辑全部为不依赖 `st.*` 的纯函数（`score_applicant` / `load_deploy_bundle` 等，
+streamlit 只做薄壳）。单测见 tests/test_streamlit_app.py（9 个：import 冒烟、
+纯函数打分区间与阈值语义、AppTest 真实渲染与阈值联动、bundle 缺失时可操作错误提示）。
+
 ## 项目结构
 
 ```
 credit-risk-modeling/
+├── streamlit_app.py       # Streamlit 交互 Demo（纯函数评分 + 薄壳 UI）
 ├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / calibration_repair / thresholds / models / explain / eda
 ├── app/                   # FastAPI 服务（schemas + main，加载部署 bundle）
 ├── scripts/               # run_eda.py / run_training.py / 检查脚本
-├── tests/                 # 109 个 pytest（单元 + API 契约）
+├── tests/                 # 118 个 pytest（单元 + API 契约 + Demo 冒烟）
 ├── artifacts/             # pipeline.joblib + deploy_bundle.joblib（模型+校准器+schema 元数据）+ model_meta.json + metrics.json（随仓库提交）
 ├── reports/               # EDA/训练/稳定性报告与图表（随仓库提交）
 ├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
