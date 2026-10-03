@@ -55,7 +55,7 @@ footer { margin-top: 52px; border-top: 1px solid #e2e8f0; padding-top: 16px;
 <header>
 <h1>credit-risk-modeling · 一页式训练报告</h1>
 <p class="meta">数据：OpenML credit-g v1（真实公开数据）　|　模型版本 1.0.0
-　|　训练时间 2026-10-04 01:11:02　|　环境：scikit-learn 1.7.2、lightgbm 4.6.0、shap 0.49.1、pandas 2.3.3、numpy 2.2.6、python 3.10.9</p>
+　|　训练时间 2026-10-04 01:54:42　|　环境：scikit-learn 1.7.2、lightgbm 4.6.0、shap 0.49.1、pandas 2.3.3、numpy 2.2.6、python 3.10.9</p>
 <div class="chips"><span>test AUC <b>0.8013</b></span><span>test KS <b>0.5119</b></span><span>ECE 0.1420 → <b>0.0681</b></span><span>部署 <b>LogisticRegression + weight</b> + sigmoid</span></div>
 <nav class="toc"><a href="#s1">① 数据</a><a href="#s2">② 特征工程</a><a href="#s3">③ 模型对比</a><a href="#s4">④ 校准</a><a href="#s5">⑤ 阈值-业务</a><a href="#s6">⑥ 公平性</a><a href="#s7">⑦ 已知限制</a></nav>
 </header>
@@ -95,6 +95,8 @@ footer { margin-top: 52px; border-top: 1px solid #e2e8f0; padding-top: 16px;
 <p class="note">选择率（部署阈值 t=0.317，整体批准率 60.0%）：最高 male single（66.9%），最低 male div/sep（33.3%），demographic parity 差距 0.336。</p>
 <p class="note">等机会（TPR = 批准 | 实际正常）：最高 male single（82.1%）、最低 male div/sep（50.0%），等机会差距 0.321；分组 AUC 区间 0.741–0.833。</p>
 <p class="note">以上为 n=200、最小组 9 条的描述性审计（seed=42 切分，复用部署管线预测，未做再平衡/去偏/特征移除）；小样本读数噪声大，不构成合规结论。</p>
+<table class="data"><thead><tr><th>档位</th><th>阈值 t</th><th>目标批准率</th><th>整体批准率</th><th>male mar/wid</th><th>male single</th><th>female div/dep/mar</th><th>male div/sep</th><th>DP 差</th><th>等机会差</th></tr></thead><tbody><tr><td>部署档（现行）</td><td>0.3167</td><td>—</td><td>60.0%</td><td>66.7%</td><td>66.9%</td><td>49.2%</td><td>33.3%</td><td>0.336</td><td>0.321</td></tr><tr><td>批准率 70% 目标</td><td>0.3970</td><td>70.0%</td><td>70.0%</td><td>83.3%</td><td>75.4%</td><td>60.7%</td><td>44.4%</td><td>0.389</td><td>0.333</td></tr><tr><td>批准率 90% 目标</td><td>0.6258</td><td>90.0%</td><td>90.0%</td><td>100.0%</td><td>92.4%</td><td>85.2%</td><td>77.8%</td><td>0.222</td><td>0.167</td></tr></tbody></table>
+<p class="note">阈值敏感性扫描：部署档之外，另按整体批准率 70% / 90% 目标反查阈值（阈值 = 校准后 PD 的目标分位数，排序型），档位按阈值从紧到松排列；各组列为该组选择率。完整表见 reports/fairness_sensitivity.md。</p>
 <p class="note">本项目只做描述性审计，未做再平衡/去偏/受保护属性移除，不构成合规结论；完整表见 reports/fairness.md 与 reports/fairness.csv。</p>
 <h2 id="s7">⑦ 已知限制（与 README 同步）</h2>
 <p class="note">README「已知限制」章节暂不可读，请直接查看 README.md 的「已知限制」——本报告不在此转述，避免与原文失同步。</p>
@@ -104,7 +106,7 @@ footer { margin-top: 52px; border-top: 1px solid #e2e8f0; padding-top: 16px;
 <code>python scripts/render_report.py</code> 从已提交的 artifacts/ 与 reports/ 产物免训练重渲染。
 页面所有数字均来自 artifacts/metrics.json、artifacts/model_meta.json 与 reports/ 下既有产物，
 缺失项渲染为“—”，不虚构数据。单文件自包含（内联 CSS + base64 图片），无任何外网依赖。</p>
-<p>渲染时间：2026-10-04 01:11:02</p>
+<p>渲染时间：2026-10-04 01:54:42</p>
 </footer>
 </div>
 </body>

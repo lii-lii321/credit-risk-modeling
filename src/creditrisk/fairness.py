@@ -19,16 +19,21 @@ personal_status 编码于特征中（"female div/dep/mar" / "male div/sep" /
 
 限制：测试集仅 200 条，分组读数受抽样噪声影响；审计为描述性测量，
 不构成合规结论（未做任何公平性约束或修正）。
+
+本模块另提供 fairness_sensitivity：部署档之外再按整体批准率目标反查阈值
+（复用 thresholds.thresholds_for_approval_rates，不重写反查逻辑），逐档复跑
+同一分组审计，观察 DP/等机会差距对阈值松紧的敏感性——仍只测量，不修正。
 """
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
 
 from .calibration import _validate
 from .evaluate import roc_auc
+from .thresholds import thresholds_for_approval_rates
 
 DECISION_RULE = "approve if PD < threshold"
 
@@ -179,6 +184,184 @@ def fairness_markdown(report: Dict) -> str:
         "## 结论",
         "",
         fairness_conclusion(report),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _sensitivity_tier_label(tier: Dict) -> str:
+    """档位展示名：部署档 / 70% 目标档（数据驱动，不硬编码目标值）。"""
+    target = tier.get("target_approval_rate")
+    if target is None:
+        return "部署档"
+    try:
+        return f"{float(target):.0%} 目标档"
+    except (TypeError, ValueError):
+        return str(tier.get("label", "未知档"))
+
+
+def fairness_sensitivity(
+    y_true,
+    y_proba,
+    groups,
+    deployed_threshold: float,
+    approval_targets: Sequence[float] = (0.7, 0.9),
+    group_column: str = "",
+) -> Dict:
+    """三档阈值下的分组公平性敏感性扫描（只测量，不修正）。
+
+    档位：
+    1. 部署档：deployed_threshold（与 API/线上同尺度的现行决策阈值）；
+    2+. 目标档：按整体批准率目标反查阈值——复用 thresholds.thresholds_for_approval_rates
+       （阈值 = y_proba 的目标分位数，排序型阈值）；PD 并列时实际批准率可能偏离目标，
+       各档报告中的 overall_selection_rate 如实给出实际值。
+
+    每档复用 fairness_audit（各组选择率 / DP 差 / 等机会差 / 分组 AUC），
+    档位按阈值升序（最紧 → 最松，稳定排序）排列；返回 dict 可直接写入 metrics.json。
+    """
+    deployed_threshold = float(deployed_threshold)
+    if not (0.0 <= deployed_threshold <= 1.0):
+        raise ValueError("deployed_threshold 需在 [0, 1] 内")
+    targets = np.sort(np.asarray(approval_targets, dtype=float))
+    if targets.size == 0:
+        raise ValueError("approval_targets 不能为空")
+    if not ((targets > 0) & (targets < 1)).all():
+        raise ValueError("approval_targets 需在 (0, 1) 开区间内")
+
+    back = thresholds_for_approval_rates(y_true, y_proba, targets)
+    tiers: List[Dict] = [{
+        "label": "deployed",
+        "target_approval_rate": None,
+        "threshold": deployed_threshold,
+        "report": fairness_audit(
+            y_true, y_proba, groups, threshold=deployed_threshold,
+            group_column=group_column,
+        ),
+    }]
+    for row in back.to_dict("records"):
+        threshold = float(row["threshold"])
+        tiers.append({
+            "label": f"target_{int(round(float(row['target_approval_rate']) * 100))}",
+            "target_approval_rate": float(row["target_approval_rate"]),
+            "threshold": threshold,
+            "report": fairness_audit(
+                y_true, y_proba, groups, threshold=threshold,
+                group_column=group_column,
+            ),
+        })
+    tiers.sort(key=lambda t: t["threshold"])  # 稳定：同阈值时部署档保持在前
+    return {
+        "group_column": str(group_column),
+        "decision_rule": DECISION_RULE,
+        "n_total": int(tiers[0]["report"]["n_total"]),
+        "deployed_threshold": deployed_threshold,
+        "approval_targets": [float(t) for t in targets],
+        "tiers": tiers,
+    }
+
+
+def fairness_sensitivity_table(scan: Dict) -> pd.DataFrame:
+    """三档对比表（每档一行）：阈值、目标/实际整体批准率、各组选择率、DP 差、等机会差。
+
+    target_approval_rate 部署档为 NaN（无目标口径，展示层渲染“—”，不虚构 0）。
+    """
+    tiers = scan["tiers"]
+    group_order = list(tiers[0]["report"]["groups"].keys())
+    rows = []
+    for tier in tiers:
+        rep = tier["report"]
+        row = {
+            "tier": tier["label"],
+            "target_approval_rate": tier["target_approval_rate"],
+            "threshold": round(float(tier["threshold"]), 4),
+            "overall_selection_rate": round(rep["overall_selection_rate"], 4),
+            "demographic_parity_gap": round(rep["demographic_parity_gap"], 4),
+            "equal_opportunity_gap": round(rep["equal_opportunity_gap"], 4),
+        }
+        for g in group_order:
+            row[f"sel:{g}"] = round(rep["groups"][g]["selection_rate"], 4)
+        rows.append(row)
+    return pd.DataFrame(rows, columns=[
+        "tier", "target_approval_rate", "threshold", "overall_selection_rate",
+        "demographic_parity_gap", "equal_opportunity_gap",
+    ] + [f"sel:{g}" for g in group_order])
+
+
+def fairness_sensitivity_conclusion(scan: Dict) -> str:
+    """三行以内数据驱动结论：阈值松紧 → DP/等机会差距变化 → 始终偏低组 → 审计边界。"""
+    tiers = sorted(scan["tiers"], key=lambda t: t["threshold"])
+    dps = [float(t["report"]["demographic_parity_gap"]) for t in tiers]
+    eos = [float(t["report"]["equal_opportunity_gap"]) for t in tiers]
+    overall = [float(t["report"]["overall_selection_rate"]) for t in tiers]
+    labels = [_sensitivity_tier_label(t) for t in tiers]
+
+    def _direction(values: List[float]) -> str:
+        if all(v == values[0] for v in values):
+            return "不随阈值松紧变化"
+        if all(b <= a for a, b in zip(values, values[1:])):
+            return "随阈值放松收窄"
+        if all(b >= a for a, b in zip(values, values[1:])):
+            return "随阈值放松扩大"
+        return "随阈值松紧非单调变化"
+
+    lowest: List[Optional[str]] = []
+    for t in tiers:
+        pairs = [
+            (g, float(v["selection_rate"]))
+            for g, v in t["report"]["groups"].items()
+            if np.isfinite(v["selection_rate"])
+        ]
+        lowest.append(min(pairs, key=lambda kv: kv[1])[0] if pairs else None)
+    if lowest and len(set(lowest)) == 1 and lowest[0] is not None:
+        lowest_vals = [
+            float(t["report"]["groups"][lowest[0]]["selection_rate"]) for t in tiers
+        ]
+        lowest_txt = (
+            f"选择率最低组三档均为 {lowest[0]}"
+            f"（依次 {'、'.join(f'{v:.1%}' for v in lowest_vals)}），"
+            "在所有档位下获批机会都最小"
+        )
+    else:
+        lowest_txt = "选择率最低组随档位变化（" + "、".join(
+            f"{lab}:{g}" for lab, g in zip(labels, lowest)
+        ) + "）"
+
+    tier_txt = "、".join(
+        f"{lab} t={t['threshold']:.4f}" for lab, t in zip(labels, tiers)
+    )
+    return "\n".join([
+        f"阈值从紧到松（{tier_txt}，整体批准率 {'→'.join(f'{v:.1%}' for v in overall)}）："
+        f"demographic parity 差距 {'→'.join(f'{v:.3f}' for v in dps)}，{_direction(dps)}；"
+        f"等机会差距 {'→'.join(f'{v:.3f}' for v in eos)}，{_direction(eos)}。",
+        f"{lowest_txt}。",
+        f"以上为 n={scan['n_total']} 的描述性敏感性扫描（seed=42 切分，复用部署决策规则，"
+        "阈值=PD 目标分位数反查，未做再平衡/去偏）；小样本组读数噪声大，不构成合规结论。",
+    ])
+
+
+def fairness_sensitivity_markdown(scan: Dict) -> str:
+    """渲染 reports/fairness_sensitivity.md：口径说明 + 三档对比表 + 三行以内结论。"""
+    tbl = fairness_sensitivity_table(scan)
+    disp = tbl.astype(object).where(pd.notna(tbl), "—")  # 部署档无目标口径 → “—”
+    targets_txt = " / ".join(f"{t:.0%}" for t in scan["approval_targets"])
+    lines = [
+        "# 公平性敏感性扫描（三档阈值）",
+        "",
+        f"- 独立测试集 n={scan['n_total']}（与训练管线同一切分与预测，seed=42，不重新建模）；"
+        f"分组特征：`{scan['group_column']}`（**含性别编码**）",
+        f"- 决策规则与部署一致：{scan['decision_rule']}；档位：部署档 t={scan['deployed_threshold']:.4f}"
+        f"（校准后 PD 低风险档下界）+ 按整体批准率 {targets_txt} 反查"
+        "（阈值 = 校准后 PD 的目标分位数，排序型阈值，复用 thresholds_for_approval_rates）",
+        "- `sel:*` 列为该组选择率（批准率）；DP 差 = 各组选择率 max−min；"
+        "等机会差 = 各组 TPR（批准|实际正常）max−min；档位按阈值从紧到松排列",
+        "",
+        "## 三档对比",
+        "",
+        disp.to_markdown(index=False),
+        "",
+        "## 结论",
+        "",
+        fairness_sensitivity_conclusion(scan),
         "",
     ]
     return "\n".join(lines)

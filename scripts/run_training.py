@@ -8,6 +8,7 @@
 - reports/model_comparison.csv、iv_table.csv、shap_*.csv/png、
   calibration_table.csv（校准前/后/参照三组）、calibration_curve.png、
   fairness.csv / fairness.md（personal_status 分组公平性审计）、
+  fairness_sensitivity.md（三档阈值公平性敏感性扫描）、
   stability_report.md、training_report.md、report.html（一页式自包含 HTML 报告）
 """
 from __future__ import annotations
@@ -56,7 +57,14 @@ from creditrisk.calibration_repair import (  # noqa: E402
 from creditrisk.data import load_credit_data  # noqa: E402
 from creditrisk.evaluate import evaluate_predictions  # noqa: E402
 from creditrisk.explain import SHAP_AVAILABLE, explain_instance, global_importance  # noqa: E402
-from creditrisk.fairness import fairness_audit, fairness_markdown, fairness_table  # noqa: E402
+from creditrisk.fairness import (  # noqa: E402
+    fairness_audit,
+    fairness_markdown,
+    fairness_sensitivity,
+    fairness_sensitivity_markdown,
+    fairness_sensitivity_table,
+    fairness_table,
+)
 from creditrisk.html_report import render_html_report  # noqa: E402
 from creditrisk.models import (  # noqa: E402
     fit_deployable_pipeline,
@@ -241,6 +249,22 @@ def main() -> None:
     log(f"demographic parity 差距={fairness['demographic_parity_gap']:.4f}，"
         f"等机会差距={fairness['equal_opportunity_gap']:.4f}")
 
+    # 阈值敏感性公平性扫描：部署档之外，按整体批准率 70%/90% 反查阈值
+    # （阈值=校准后 PD 的目标分位数，排序型，反查复用 thresholds_for_approval_rates），
+    # 每档复跑同一分组审计，观察 DP/等机会差距随阈值松紧的变化（只测量，不修正）。
+    log("公平性敏感性扫描：部署档 + 整体批准率 70%/90% 目标档 …")
+    fairness_sens = fairness_sensitivity(
+        y_test, calibrated_test_proba, X_test["personal_status"],
+        deployed_threshold=float(t_low), approval_targets=(0.7, 0.9),
+        group_column="personal_status",
+    )
+    (REPORTS_DIR / "fairness_sensitivity.md").write_text(
+        fairness_sensitivity_markdown(fairness_sens), encoding="utf-8"
+    )
+    log(fairness_sensitivity_table(fairness_sens).to_string(index=False))
+    sens_dps = [t["report"]["demographic_parity_gap"] for t in fairness_sens["tiers"]]
+    log(f"三档 DP 差：{' → '.join(f'{d:.4f}' for d in sens_dps)}")
+
 
     # ------------------------------------------------------------- IV
     woe = WoEEncoder(n_bins=10).fit(X_train, y_train)
@@ -300,6 +324,7 @@ def main() -> None:
         "calibration": calibration,
         "threshold_tradeoff": threshold_tradeoff,
         "fairness": fairness,
+        "fairness_sensitivity": fairness_sens,
         "global_importance_method": shap_method,
         "deployed_model_local_explanation": (
             ("shap" if best_model == "lightgbm" else "coef_x_woe_deviation")

@@ -44,7 +44,7 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（143 个）
+# 3. 全量测试（150 个）
 python -m pytest tests
 
 # 4. 启动评分服务
@@ -207,6 +207,14 @@ male single（82.1%）。差距部分反映该组实际违约率更高（32.8% v
 违约率 33.3% 批准率却只有 33.3%（n=9，噪声大）。**本项目只做描述性审计，未做再平衡、
 去偏或受保护属性移除，不构成合规结论**；最小组仅 9 条，读数受抽样噪声影响。
 
+**阈值敏感性（三档扫描）**：部署档（t=0.317，整体批准率 60%）之外，另按整体批准率 70%/90%
+反查阈值（阈值 = 校准后 PD 的目标分位数，排序型）逐档复跑同一分组审计：DP 差
+**0.336 → 0.389 → 0.222**、等机会差距 **0.321 → 0.333 → 0.167**（阈值从紧到松）——
+差距并非随阈值放松单调收窄：70% 档反而最大（male mar/wid 选择率率先抬升至 83.3%），90% 档
+各组普遍获批后才明显回落；**male div/sep 在三档中始终选择率最低**（33.3% / 44.4% / 77.8%）。
+完整表见 [reports/fairness_sensitivity.md](reports/fairness_sensitivity.md) 与 metrics.json
+的 `fairness_sensitivity` 字段。
+
 ### 评分服务契约
 
 - `POST /score`：20 特征 JSON（Pydantic v2 强校验：类别取值白名单，非法值 422；
@@ -292,7 +300,7 @@ credit-risk-modeling/
 ├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / calibration_repair / fairness / thresholds / models / explain / eda / html_report
 ├── app/                   # FastAPI 服务（schemas + main，加载部署 bundle）
 ├── scripts/               # run_eda.py / run_training.py / render_report.py / 检查脚本
-├── tests/                 # 143 个 pytest（单元 + API 契约/错误规范化 + Demo 冒烟 + 报告渲染）
+├── tests/                 # 150 个 pytest（单元 + API 契约/错误规范化 + Demo 冒烟 + 报告渲染）
 ├── artifacts/             # pipeline.joblib + deploy_bundle.joblib（模型+校准器+schema 元数据）+ model_meta.json + metrics.json（随仓库提交）
 ├── reports/               # EDA/训练/稳定性/公平性审计报告与图表 + 一页式 report.html（随仓库提交）
 ├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
@@ -313,13 +321,16 @@ credit-risk-modeling/
 
 1. **数据规模与年代**：credit-g 仅 1000 条、20 特征，且为 1990 年代德国信贷档案数据；
    指标不能外推到现代信贷组合，仅用于方法链路演示。
-2. **合规视角：已实现基础公平性审计，未做再平衡/去偏处理**：gender 经 `personal_status`
-   编码于特征中（模型可见受保护属性）。本项目已在其测试集切分上按 personal_status 分组
-   实测 demographic parity / equal opportunity / 分组 AUC（真实数字见
+2. **合规视角：已实现基础公平性审计与三档阈值敏感性扫描，未做再平衡/去偏处理**：gender 经
+   `personal_status` 编码于特征中（模型可见受保护属性）。本项目已在其测试集切分上按
+   personal_status 分组实测 demographic parity / equal opportunity / 分组 AUC（真实数字见
    [reports/fairness.md](reports/fairness.md) 与 metrics.json 的 `fairness` 字段，
    实测 DP 差距 0.336、等机会差距 0.321，女性组批准率显著偏低，如实记录不作粉饰）；
-   但**未实现任何公平性约束或修正**（再平衡、去偏、受保护属性移除/约束均未做），
-   审计为描述性测量，不建议直接用于任何真实决策。
+   并已实现三档阈值敏感性扫描（部署档 + 按整体批准率 70%/90% 反查档逐档复跑同一审计，
+   DP 差 0.336→0.389→0.222、male div/sep 三档始终选择率最低，见
+   [reports/fairness_sensitivity.md](reports/fairness_sensitivity.md) 与 metrics.json 的
+   `fairness_sensitivity` 字段）；但**未实现任何公平性约束或修正**（再平衡、去偏、
+   受保护属性移除/约束均未做），审计为描述性测量，不建议直接用于任何真实决策。
 3. **AUC ≈ 0.80 的天花板**：与公开基准一致，credit-g 信息量有限；未做超参搜索
    （LightGBM 用固定参数），深度调参可能再提升 1-2 个点，非本项目重点。
 4. **单样本解释的两套口径**：部署模型（LR）归因是 coef×WOE 偏移，全局重要性是 LightGBM

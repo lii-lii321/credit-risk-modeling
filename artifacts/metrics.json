@@ -483,6 +483,153 @@
     "demographic_parity_gap": 0.3361581920903955,
     "equal_opportunity_gap": 0.3214285714285714
   },
+  "fairness_sensitivity": {
+    "group_column": "personal_status",
+    "decision_rule": "approve if PD < threshold",
+    "n_total": 200,
+    "deployed_threshold": 0.31673603083024254,
+    "approval_targets": [
+      0.7,
+      0.9
+    ],
+    "tiers": [
+      {
+        "label": "deployed",
+        "target_approval_rate": null,
+        "threshold": 0.31673603083024254,
+        "report": {
+          "group_column": "personal_status",
+          "decision_rule": "approve if PD < threshold",
+          "threshold": 0.31673603083024254,
+          "n_total": 200,
+          "overall_bad_rate": 0.3,
+          "overall_selection_rate": 0.6,
+          "groups": {
+            "male mar/wid": {
+              "n": 12,
+              "bad_rate": 0.25,
+              "selection_rate": 0.6666666666666666,
+              "tpr_good": 0.7777777777777778,
+              "auc": 0.7407407407407407
+            },
+            "male single": {
+              "n": 118,
+              "bad_rate": 0.288135593220339,
+              "selection_rate": 0.6694915254237288,
+              "tpr_good": 0.8214285714285714,
+              "auc": 0.8074229691876751
+            },
+            "female div/dep/mar": {
+              "n": 61,
+              "bad_rate": 0.32786885245901637,
+              "selection_rate": 0.4918032786885246,
+              "tpr_good": 0.6341463414634146,
+              "auc": 0.8182926829268293
+            },
+            "male div/sep": {
+              "n": 9,
+              "bad_rate": 0.3333333333333333,
+              "selection_rate": 0.3333333333333333,
+              "tpr_good": 0.5,
+              "auc": 0.8333333333333334
+            }
+          },
+          "demographic_parity_gap": 0.3361581920903955,
+          "equal_opportunity_gap": 0.3214285714285714
+        }
+      },
+      {
+        "label": "target_70",
+        "target_approval_rate": 0.7,
+        "threshold": 0.39698502137410474,
+        "report": {
+          "group_column": "personal_status",
+          "decision_rule": "approve if PD < threshold",
+          "threshold": 0.39698502137410474,
+          "n_total": 200,
+          "overall_bad_rate": 0.3,
+          "overall_selection_rate": 0.7,
+          "groups": {
+            "male mar/wid": {
+              "n": 12,
+              "bad_rate": 0.25,
+              "selection_rate": 0.8333333333333334,
+              "tpr_good": 1.0,
+              "auc": 0.7407407407407407
+            },
+            "male single": {
+              "n": 118,
+              "bad_rate": 0.288135593220339,
+              "selection_rate": 0.7542372881355932,
+              "tpr_good": 0.8690476190476191,
+              "auc": 0.8074229691876751
+            },
+            "female div/dep/mar": {
+              "n": 61,
+              "bad_rate": 0.32786885245901637,
+              "selection_rate": 0.6065573770491803,
+              "tpr_good": 0.7560975609756098,
+              "auc": 0.8182926829268293
+            },
+            "male div/sep": {
+              "n": 9,
+              "bad_rate": 0.3333333333333333,
+              "selection_rate": 0.4444444444444444,
+              "tpr_good": 0.6666666666666666,
+              "auc": 0.8333333333333334
+            }
+          },
+          "demographic_parity_gap": 0.38888888888888895,
+          "equal_opportunity_gap": 0.33333333333333337
+        }
+      },
+      {
+        "label": "target_90",
+        "target_approval_rate": 0.9,
+        "threshold": 0.6257919597830287,
+        "report": {
+          "group_column": "personal_status",
+          "decision_rule": "approve if PD < threshold",
+          "threshold": 0.6257919597830287,
+          "n_total": 200,
+          "overall_bad_rate": 0.3,
+          "overall_selection_rate": 0.9,
+          "groups": {
+            "male mar/wid": {
+              "n": 12,
+              "bad_rate": 0.25,
+              "selection_rate": 1.0,
+              "tpr_good": 1.0,
+              "auc": 0.7407407407407407
+            },
+            "male single": {
+              "n": 118,
+              "bad_rate": 0.288135593220339,
+              "selection_rate": 0.923728813559322,
+              "tpr_good": 0.9642857142857143,
+              "auc": 0.8074229691876751
+            },
+            "female div/dep/mar": {
+              "n": 61,
+              "bad_rate": 0.32786885245901637,
+              "selection_rate": 0.8524590163934426,
+              "tpr_good": 0.975609756097561,
+              "auc": 0.8182926829268293
+            },
+            "male div/sep": {
+              "n": 9,
+              "bad_rate": 0.3333333333333333,
+              "selection_rate": 0.7777777777777778,
+              "tpr_good": 0.8333333333333334,
+              "auc": 0.8333333333333334
+            }
+          },
+          "demographic_parity_gap": 0.2222222222222222,
+          "equal_opportunity_gap": 0.16666666666666663
+        }
+      }
+    ]
+  },
   "global_importance_method": "shap_mean_abs(lightgbm+weight)",
   "deployed_model_local_explanation": "coef_x_woe_deviation",
   "local_example": {

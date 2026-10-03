@@ -488,6 +488,44 @@ def _section_fairness(metrics: Dict) -> str:
         for line in conclusion.splitlines():
             if line.strip():
                 parts.append(f'<p class="note">{_esc(line)}</p>')
+
+    # 阈值敏感性扫描（三档对比）：metrics 有该字段才渲染，缺失时如实省略整块
+    sens = metrics.get("fairness_sensitivity") or {}
+    tiers = [t for t in (sens.get("tiers") or []) if isinstance(t.get("report"), dict)]
+    if tiers:
+        group_names = list(tiers[0]["report"].get("groups") or {})
+        headers = (["档位", "阈值 t", "目标批准率", "整体批准率"]
+                   + [_esc(g) for g in group_names] + ["DP 差", "等机会差"])
+        sens_rows = []
+        for tier in tiers:
+            rep = tier["report"]
+            target = tier.get("target_approval_rate")
+            cells = [
+                _esc("部署档（现行）" if target is None else f"批准率 {float(target):.0%} 目标"),
+                _num(tier.get("threshold"), 4),
+                "—" if target is None else _pct(target),
+                _pct(rep.get("overall_selection_rate")),
+            ]
+            cells += [
+                _pct((rep.get("groups") or {}).get(g, {}).get("selection_rate"))
+                for g in group_names
+            ]
+            cells += [
+                _num(rep.get("demographic_parity_gap"), 3),
+                _num(rep.get("equal_opportunity_gap"), 3),
+            ]
+            sens_rows.append(tuple(cells))
+        parts.append(_table(headers, sens_rows))
+        targets_txt = " / ".join(
+            f"{float(t):.0%}" for t in (sens.get("approval_targets") or [])
+        )
+        parts.append(
+            '<p class="note">阈值敏感性扫描：部署档之外，另按整体批准率 '
+            f'{_esc(targets_txt)} 目标反查阈值（阈值 = 校准后 PD 的目标分位数，'
+            "排序型），档位按阈值从紧到松排列；各组列为该组选择率。"
+            "完整表见 reports/fairness_sensitivity.md。</p>"
+        )
+
     parts.append('<p class="note">本项目只做描述性审计，未做再平衡/去偏/受保护属性移除，'
                  "不构成合规结论；完整表见 reports/fairness.md 与 reports/fairness.csv。</p>")
     return "\n".join(parts)
