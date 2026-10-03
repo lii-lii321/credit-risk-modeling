@@ -8,7 +8,7 @@
 - reports/model_comparison.csv、iv_table.csv、shap_*.csv/png、
   calibration_table.csv（校准前/后/参照三组）、calibration_curve.png、
   fairness.csv / fairness.md（personal_status 分组公平性审计）、
-  stability_report.md、training_report.md
+  stability_report.md、training_report.md、report.html（一页式自包含 HTML 报告）
 """
 from __future__ import annotations
 
@@ -57,6 +57,7 @@ from creditrisk.data import load_credit_data  # noqa: E402
 from creditrisk.evaluate import evaluate_predictions  # noqa: E402
 from creditrisk.explain import SHAP_AVAILABLE, explain_instance, global_importance  # noqa: E402
 from creditrisk.fairness import fairness_audit, fairness_markdown, fairness_table  # noqa: E402
+from creditrisk.html_report import render_html_report  # noqa: E402
 from creditrisk.models import (  # noqa: E402
     fit_deployable_pipeline,
     make_pipeline,
@@ -501,6 +502,14 @@ def main() -> None:
         "",
     ]
     (REPORTS_DIR / "training_report.md").write_text("\n".join(report), encoding="utf-8")
+
+    # ---------------------------------------------- one-page html report
+    # 一页式自包含 HTML（内联 CSS + base64 图片，零外网依赖）：数据 → 特征 →
+    # 模型对比 → 校准 → 阈值-业务 → 公平性 → 已知限制，数字全部来自本次产物。
+    html_path = render_html_report(
+        metrics_payload, REPORTS_DIR, REPORTS_DIR / "report.html", meta=meta,
+    )
+    log(f"一页式 HTML 训练报告：{html_path}")
 
     log(f"完成，用时 {time.time() - started:.1f}s；产物见 artifacts/ 与 reports/")
 

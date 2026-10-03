@@ -10,7 +10,7 @@ SHAP 可解释性与 FastAPI 评分服务。
 ![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/pytest-133%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/pytest-137%20passed-brightgreen)
 
 ![demo](docs/demo.gif)
 
@@ -44,7 +44,7 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（133 个）
+# 3. 全量测试（137 个）
 python -m pytest tests
 
 # 4. 启动评分服务
@@ -217,6 +217,15 @@ male single（82.1%）。差距部分反映该组实际违约率更高（32.8% v
   （与校准前尺度 0.506/0.792 在排序意义下一一对应）；
 - `GET /health`：版本与训练时间。API 测试 9 个（tests/test_api.py）。
 
+## 一页式训练报告
+
+[reports/report.html](reports/report.html)：单文件自包含 HTML（内联 CSS + 图片 base64 内嵌，
+零 JS、零外网资源，浏览器直接打开/打印即可），按 **①数据概况 → ②特征工程（WOE/IV）→
+③模型对比 → ④校准（发现→修复→复测）→ ⑤阈值-业务 → ⑥公平性审计 → ⑦已知限制** 顺序
+聚合训练全链路，3 分钟看懂整个项目。由 `scripts/run_training.py` 训练管线**自动生成**；
+也可 `python scripts/render_report.py` 从已提交的 artifacts/reports 产物免训练重渲染
+（页面所有数字均来自 metrics.json 与 reports/ 既有产物，缺失项如实渲染"—"）。
+
 ## 交互 Demo（Streamlit）
 
 单笔评分演示：滑杆/选择框输入 20 维画像 → 校准后 PD 大字展示 +
@@ -243,12 +252,12 @@ streamlit 只做薄壳）。单测见 tests/test_streamlit_app.py（9 个：impo
 ```
 credit-risk-modeling/
 ├── streamlit_app.py       # Streamlit 交互 Demo（纯函数评分 + 薄壳 UI）
-├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / calibration_repair / fairness / thresholds / models / explain / eda
+├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / calibration_repair / fairness / thresholds / models / explain / eda / html_report
 ├── app/                   # FastAPI 服务（schemas + main，加载部署 bundle）
-├── scripts/               # run_eda.py / run_training.py / 检查脚本
-├── tests/                 # 133 个 pytest（单元 + API 契约 + Demo 冒烟）
+├── scripts/               # run_eda.py / run_training.py / render_report.py / 检查脚本
+├── tests/                 # 137 个 pytest（单元 + API 契约 + Demo 冒烟 + 报告渲染）
 ├── artifacts/             # pipeline.joblib + deploy_bundle.joblib（模型+校准器+schema 元数据）+ model_meta.json + metrics.json（随仓库提交）
-├── reports/               # EDA/训练/稳定性/公平性审计报告与图表（随仓库提交）
+├── reports/               # EDA/训练/稳定性/公平性审计报告与图表 + 一页式 report.html（随仓库提交）
 ├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
 └── .github/workflows/ci.yml
 ```
