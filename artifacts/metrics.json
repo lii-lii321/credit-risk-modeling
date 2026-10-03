@@ -87,7 +87,7 @@
     "n_bins": 10,
     "test_n": 200,
     "deployed": {
-      "model": "logistic_regression+weight (deployed)",
+      "model": "logistic_regression+weight (deployed, before calibration)",
       "brier": 0.18102244664804076,
       "ece": 0.142035668604659,
       "mean_predicted_pd": 0.4373023792979691,
@@ -151,6 +151,106 @@
           "bin": "[0.848, 0.968)",
           "n": 20,
           "mean_predicted_pd": 0.8980979221362795,
+          "observed_bad_rate": 0.75
+        }
+      ]
+    },
+    "repair": {
+      "method": "sigmoid",
+      "protocol": "5-fold stratified OOF predictions on train (held-out per fold); sigmoid vs isotonic fit on sel_fit half, compared by ECE on sel_val half; winner refit on full OOF; test set never used for fitting",
+      "selection": {
+        "selection_fit_n": 400,
+        "selection_valid_n": 400,
+        "n_bins": 10,
+        "ece_valid_raw": 0.12542562183336384,
+        "brier_valid_raw": 0.1962531087429194,
+        "ece_valid_sigmoid": 0.06991632207036992,
+        "brier_valid_sigmoid": 0.18224120529707552,
+        "ece_valid_isotonic": 0.07721001702051945,
+        "brier_valid_isotonic": 0.18308278033332917,
+        "method": "sigmoid"
+      },
+      "test": {
+        "n_bins": 10,
+        "test_n": 200,
+        "test_ece_before": 0.142035668604659,
+        "test_ece_after": 0.0681398388820464,
+        "test_brier_before": 0.18102244664804076,
+        "test_brier_after": 0.15907862555097094,
+        "test_mean_pd_before": 0.4373023792979691,
+        "test_mean_pd_after": 0.30121767193183985,
+        "test_auc_before": 0.8013095238095239,
+        "test_auc_after": 0.8013095238095239,
+        "observed_bad_rate": 0.3
+      },
+      "sigmoid_coefficients": {
+        "a": 0.7579586240854298,
+        "b": -0.7879807214262465
+      },
+      "model": "logistic_regression+weight (deployed, before calibration) + sigmoid (deployed, after calibration)",
+      "brier": 0.15907862555097094,
+      "ece": 0.0681398388820464,
+      "mean_predicted_pd": 0.30121767193183985,
+      "observed_bad_rate": 0.3,
+      "reliability": [
+        {
+          "bin": "[0.014, 0.070)",
+          "n": 20,
+          "mean_predicted_pd": 0.044181649262262215,
+          "observed_bad_rate": 0.0
+        },
+        {
+          "bin": "[0.070, 0.114)",
+          "n": 20,
+          "mean_predicted_pd": 0.09485219986269225,
+          "observed_bad_rate": 0.15
+        },
+        {
+          "bin": "[0.114, 0.152)",
+          "n": 20,
+          "mean_predicted_pd": 0.1324582504352037,
+          "observed_bad_rate": 0.1
+        },
+        {
+          "bin": "[0.152, 0.201)",
+          "n": 20,
+          "mean_predicted_pd": 0.17859342622063482,
+          "observed_bad_rate": 0.25
+        },
+        {
+          "bin": "[0.201, 0.265)",
+          "n": 20,
+          "mean_predicted_pd": 0.23030905150640762,
+          "observed_bad_rate": 0.05
+        },
+        {
+          "bin": "[0.265, 0.317)",
+          "n": 20,
+          "mean_predicted_pd": 0.28983860286555774,
+          "observed_bad_rate": 0.2
+        },
+        {
+          "bin": "[0.317, 0.397)",
+          "n": 20,
+          "mean_predicted_pd": 0.3583613335262002,
+          "observed_bad_rate": 0.4
+        },
+        {
+          "bin": "[0.397, 0.460)",
+          "n": 20,
+          "mean_predicted_pd": 0.429354495307143,
+          "observed_bad_rate": 0.5
+        },
+        {
+          "bin": "[0.460, 0.626)",
+          "n": 20,
+          "mean_predicted_pd": 0.5452192855105574,
+          "observed_bad_rate": 0.6
+        },
+        {
+          "bin": "[0.626, 0.856)",
+          "n": 20,
+          "mean_predicted_pd": 0.7090084248217396,
           "observed_bad_rate": 0.75
         }
       ]

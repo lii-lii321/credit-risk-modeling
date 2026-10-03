@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""端到端训练入口：实验对比 → 最优模型 → 产物落盘 → 可解释性 → 稳定性报告。
+"""端到端训练入口：实验对比 → 最优模型 → 校准修复 → 产物落盘 → 可解释性 → 稳定性报告。
 
 运行：python scripts/run_training.py
 产物：
-- artifacts/pipeline.joblib、model_meta.json、metrics.json
+- artifacts/pipeline.joblib、deploy_bundle.joblib（模型+校准器+schema 元数据）、
+  model_meta.json、metrics.json
 - reports/model_comparison.csv、iv_table.csv、shap_*.csv/png、
+  calibration_table.csv（校准前/后/参照三组）、calibration_curve.png、
   stability_report.md、training_report.md
 """
 from __future__ import annotations
@@ -45,11 +47,17 @@ from creditrisk.calibration import (  # noqa: E402
     plot_reliability_diagram,
     reliability_data,
 )
+from creditrisk.calibration_repair import (  # noqa: E402
+    build_bundle,
+    calibrate_pipeline,
+    save_bundle,
+)
 from creditrisk.data import load_credit_data  # noqa: E402
 from creditrisk.evaluate import evaluate_predictions  # noqa: E402
 from creditrisk.explain import SHAP_AVAILABLE, explain_instance, global_importance  # noqa: E402
 from creditrisk.models import (  # noqa: E402
     fit_deployable_pipeline,
+    make_pipeline,
     run_all_experiments,
     select_best,
 )
@@ -94,13 +102,35 @@ def main() -> None:
 
     # --------------------------------------------------- final artifact
     pipeline = fit_deployable_pipeline(X_train, y_train, best_model, best_strategy)
-    test_proba = pipeline.predict_proba(X_test)[:, 1]
+    test_proba = pipeline.predict_proba(X_test)[:, 1]  # 校准前（原始）PD
     final_metrics = evaluate_predictions(y_test, test_proba)
     log(f"最终模型测试集指标：{final_metrics}")
     joblib.dump(pipeline, ARTIFACTS_DIR / "pipeline.joblib")
 
-    # risk band 阈值：测试集 PD 的 60% / 85% 分位
-    t_low, t_high = np.quantile(test_proba, [0.60, 0.85])
+    # ------------------------------------------------ calibration repair
+    # 校准修复：balanced 加权使 PD 系统性偏高（校准前 ECE 见下）。协议（防泄漏）：
+    # 1) 训练集 5 折分层 CV 得到每条样本的 held-out（OOF）预测概率；
+    # 2) OOF 分层切两半——sel_fit 上分别拟合 Platt(sigmoid) 与 isotonic，
+    #    sel_val 上对比两者 ECE 择优；择优者用全部 OOF 重拟合为部署校准器；
+    # 3) 测试集只做单调变换，绝不参与校准器拟合。
+    log("校准修复：在训练集 OOF held-out 预测上拟合 sigmoid/isotonic 并按验证 ECE 择优 …")
+    calibrator, calib_selection, calib_test = calibrate_pipeline(
+        pipeline, X_train, y_train, X_test, y_test,
+        make_pipeline_fn=lambda: make_pipeline(best_model, best_strategy),
+        n_splits=5, random_state=RANDOM_STATE,
+    )
+    calibrated_test_proba = calibrator.apply(test_proba)
+    calibration_method = calibrator.method
+    log(f"校准修复：择优方法={calibration_method}，测试集 ECE "
+        f"{calib_test['test_ece_before']:.4f} → {calib_test['test_ece_after']:.4f}，"
+        f"Brier {calib_test['test_brier_before']:.4f} → {calib_test['test_brier_after']:.4f}，"
+        f"AUC {calib_test['test_auc_before']:.4f} → {calib_test['test_auc_after']:.4f}（排序保持）")
+
+    # risk band 阈值：测试集（校准后）PD 的 60% / 85% 分位。
+    # API/线上一律返回校准后 PD，分档阈值必须与之同尺度；校准为单调变换，
+    # 与校准前阈值一一对应（排序不变，风险分档归属不受影响）。
+    t_low, t_high = np.quantile(calibrated_test_proba, [0.60, 0.85])
+    t_low_raw, t_high_raw = np.quantile(test_proba, [0.60, 0.85])
 
     # ------------------------------------------------------- calibration
     # 排序指标（AUC/KS）不约束 PD 的绝对值；class_weight="balanced" 会系统性抬高
@@ -109,8 +139,10 @@ def main() -> None:
     ref_proba = ref_pipe.predict_proba(X_test)[:, 1]
     cal_deployed_table = reliability_data(y_test, test_proba, n_bins=10)
     cal_ref_table = reliability_data(y_test, ref_proba, n_bins=10)
-    deployed_label = f"{best_model}+{best_strategy} (deployed)"
+    deployed_label = f"{best_model}+{best_strategy} (deployed, before calibration)"
     reference_label = "logistic_regression+none (reference)"
+    repaired_label = f"{deployed_label} + {calibration_method} (deployed, after calibration)"
+    cal_repaired_table = reliability_data(y_test, calibrated_test_proba, n_bins=10)
     calibration = {
         "n_bins": 10,
         "test_n": int(len(y_test)),
@@ -121,6 +153,21 @@ def main() -> None:
             "mean_predicted_pd": float(np.mean(test_proba)),
             "observed_bad_rate": float(np.mean(y_test)),
             "reliability": cal_deployed_table.to_dict("records"),
+        },
+        "repair": {
+            "method": calibration_method,
+            "protocol": ("5-fold stratified OOF predictions on train (held-out per fold); "
+                         "sigmoid vs isotonic fit on sel_fit half, compared by ECE on sel_val half; "
+                         "winner refit on full OOF; test set never used for fitting"),
+            "selection": calib_selection,
+            "test": calib_test,
+            "sigmoid_coefficients": calibrator.coefficients_,
+            "model": repaired_label,
+            "brier": calib_test["test_brier_after"],
+            "ece": calib_test["test_ece_after"],
+            "mean_predicted_pd": float(np.mean(calibrated_test_proba)),
+            "observed_bad_rate": float(np.mean(y_test)),
+            "reliability": cal_repaired_table.to_dict("records"),
         },
         "reference": {
             "model": reference_label,
@@ -133,18 +180,22 @@ def main() -> None:
     }
     cal_csv = pd.concat([
         cal_deployed_table.assign(model=deployed_label),
+        cal_repaired_table.assign(model=repaired_label),
         cal_ref_table.assign(model=reference_label),
     ])[["model", "bin", "n", "mean_predicted_pd", "observed_bad_rate"]]
     cal_csv.to_csv(REPORTS_DIR / "calibration_table.csv", index=False)
     plot_reliability_diagram(
-        [(deployed_label, y_test, test_proba), (reference_label, y_test, ref_proba)],
+        [(deployed_label, y_test, test_proba),
+         (repaired_label, y_test, calibrated_test_proba),
+         (reference_label, y_test, ref_proba)],
         REPORTS_DIR / "calibration_curve.png",
         n_bins=10,
     )
-    log(f"校准：部署模型 Brier={calibration['deployed']['brier']:.4f} "
+    log(f"校准：部署模型（校准前）Brier={calibration['deployed']['brier']:.4f} "
         f"ECE={calibration['deployed']['ece']:.4f}，平均预测 PD "
         f"{calibration['deployed']['mean_predicted_pd']:.3f} vs 实际违约率 "
-        f"{calibration['deployed']['observed_bad_rate']:.3f}")
+        f"{calibration['deployed']['observed_bad_rate']:.3f}；校准后（{calibration_method}）"
+        f"Brier={calib_test['test_brier_after']:.4f} ECE={calib_test['test_ece_after']:.4f}")
 
     # -------------------------------------------------- threshold trade-off
     # 把 PD 排序翻译成业务口径：不同批准率目标下的阈值与批内/拒件坏账率。
@@ -250,6 +301,15 @@ def main() -> None:
         "categorical_features": CAT_FEATURES,
         "category_values": CATEGORY_VALUES,
         "risk_band_thresholds": {"low_below": float(t_low), "medium_below": float(t_high)},
+        "risk_band_thresholds_raw_pd": {"low_below": float(t_low_raw), "medium_below": float(t_high_raw)},
+        "calibration": {
+            "applied": True,
+            "method": calibration_method,
+            "test_ece_before": calib_test["test_ece_before"],
+            "test_ece_after": calib_test["test_ece_after"],
+            "test_brier_before": calib_test["test_brier_before"],
+            "test_brier_after": calib_test["test_brier_after"],
+        },
         "test_metrics": final_metrics,
         "global_importance_method": shap_method,
         "trained_at": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -265,6 +325,24 @@ def main() -> None:
     (ARTIFACTS_DIR / "model_meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+    # 部署 bundle：模型管线 + 校准器 + 特征 schema 元数据 + 风险分档阈值，
+    # 供 FastAPI 与 Streamlit Demo 加载（单一事实来源）。
+    bundle_meta = {
+        "model_version": meta["model_version"],
+        "model": best_model,
+        "strategy": best_strategy,
+        "features": FEATURES,
+        "categorical_features": CAT_FEATURES,
+        "category_values": CATEGORY_VALUES,
+        "risk_band_thresholds": meta["risk_band_thresholds"],
+        "calibration": meta["calibration"],
+    }
+    save_bundle(
+        ARTIFACTS_DIR / "deploy_bundle.joblib",
+        build_bundle(pipeline, calibrator, bundle_meta),
+    )
+    log(f"部署 bundle 已导出：{ARTIFACTS_DIR / 'deploy_bundle.joblib'}（校准器={calibration_method}）")
 
     # ------------------------------------------------------- stability
     psi_train_test = psi_table(X_train, X_test)
@@ -334,9 +412,12 @@ def main() -> None:
         "",
         f"LightGBM 的 SHAP 归因（供对照）：`{json.dumps(local_lgbm, ensure_ascii=False)}`",
         "",
-        "## 风险分档阈值（测试集 PD 分位）",
+        "## 风险分档阈值（测试集校准后 PD 的 60%/85% 分位）",
         "",
-        f"- 低风险：PD < {t_low:.3f}；中风险：{t_low:.3f} ≤ PD < {t_high:.3f}；高风险：PD ≥ {t_high:.3f}",
+        f"- 低风险：PD < {t_low:.3f}；中风险：{t_low:.3f} ≤ PD < {t_high:.3f}；高风险：PD ≥ {t_high:.3f}"
+        f"（尺度：校准后 PD，与 API/线上输出一致）",
+        f"- 校准前（原始 PD）尺度的等价阈值：{t_low_raw:.3f} / {t_high_raw:.3f}——",
+        "校准为单调变换，两套阈值在排序意义下一一对应，样本风险分档归属完全一致",
         "",
         "## 概率校准（独立测试集，等频 10 桶）",
         "",
@@ -357,6 +438,22 @@ def main() -> None:
         "",
         f"Brier={calibration['reference']['brier']:.4f}，ECE={calibration['reference']['ece']:.4f}，"
         f"平均预测 PD={calibration['reference']['mean_predicted_pd']:.3f}",
+        "",
+        "### 校准修复（OOF held-out 预测上择优 sigmoid / isotonic）",
+        "",
+        "协议：训练集 5 折分层 CV 产出每条样本的 held-out（OOF）预测 → OOF 分层切两半，",
+        "sel_fit 上分别拟合 Platt(sigmoid) 与 isotonic，sel_val 上对比 ECE 择优，",
+        "择优者用全部 OOF 重拟合为部署校准器；测试集只做单调变换，绝不参与校准器拟合。",
+        "",
+        _repair_selection_table(calibration).to_markdown(index=False),
+        "",
+        f"择优结果：**{calibration_method}**"
+        + (f"（σ(a·logit(p)+b)，a={calibrator.coefficients_.get('a', float('nan')):.4f}，"
+           f"b={calibrator.coefficients_.get('b', float('nan')):.4f}）" if calibration_method == "sigmoid" else ""),
+        "",
+        "#### 测试集复测（校准前 → 校准后，n=200）",
+        "",
+        _repair_test_table(calib_test).to_markdown(index=False),
         "",
         _calibration_conclusion(calibration),
         "",
@@ -404,24 +501,61 @@ def _threshold_conclusion(targets_table: pd.DataFrame, test_n: int) -> str:
 
 
 def _calibration_conclusion(calibration: dict) -> str:
-    """按实测数字给出校准结论（数据驱动，不预写方向）。"""
+    """三段式校准结论：发现（保留校准前数字）→ 修复（方法与择优依据）→ 复测（测试集实测）。"""
     dep = calibration["deployed"]
     ref = calibration["reference"]
+    rep = calibration["repair"]
+    t = rep["test"]
+    sel = rep["selection"]
     bias = dep["mean_predicted_pd"] - dep["observed_bad_rate"]
-    if bias > 0.05:
-        direction = "系统性偏高"
-    elif bias < -0.05:
-        direction = "系统性偏低"
-    else:
-        direction = "基本一致"
-    return (
-        f"**结论**：部署模型平均预测 PD {dep['mean_predicted_pd']:.3f} vs 实际违约率 "
-        f"{dep['observed_bad_rate']:.3f}（偏移 {bias:+.3f}）→ PD 绝对值{direction}；"
-        f"参照（未加权 LR）平均预测 PD {ref['mean_predicted_pd']:.3f}，ECE {ref['ece']:.4f} vs "
-        f"部署模型 {dep['ece']:.4f}。balanced 加权改善排序（AUC/KS）但把 PD 绝对值抬高，"
-        f"PD 不能直接当作真实违约概率用于定价或资本计算；风险分档阈值基于 PD 相对排序，"
-        f"不受此偏移影响。如需绝对校准可在验证集上做 Platt/isotonic 修正（本项目未实现）。"
+    fixed = t["test_ece_after"] < t["test_ece_before"]
+    verdict = (
+        f"校准后平均 PD 与实际违约率偏差收窄至 "
+        f"{abs(t['test_mean_pd_after'] - t['observed_bad_rate']):.3f}，"
+        f"可谨慎用于需要绝对 PD 的场景（测试集仅 {t['test_n']} 条，逐桶读数仍有抽样噪声）。"
+        if fixed else
+        f"本次修复未能在测试集上降低 ECE（{t['test_ece_after']:.4f} ≥ {t['test_ece_before']:.4f}），"
+        "如实记录：校准后 PD 仍不能当作真实违约概率使用。"
     )
+    return (
+        f"**发现**：balanced 加权改善排序（AUC/KS）但把 PD 绝对值系统性抬高——"
+        f"部署模型平均预测 PD {dep['mean_predicted_pd']:.3f} vs 实际违约率 "
+        f"{dep['observed_bad_rate']:.3f}（偏移 {bias:+.3f}），校准前 ECE {dep['ece']:.4f}"
+        f"（未加权参照 {ref['ece']:.4f}），PD 不能直接当作真实违约概率。\n\n"
+        f"**修复**：在训练集 OOF held-out 预测上择优校准器——验证段（n={sel['selection_valid_n']}）"
+        f"ECE：raw={sel['ece_valid_raw']:.4f}，sigmoid={sel['ece_valid_sigmoid']:.4f}，"
+        f"isotonic={sel['ece_valid_isotonic']:.4f}，选中 **{rep['method']}** 并以全部 OOF 重拟合；"
+        f"测试集只做单调变换，未参与校准器拟合。\n\n"
+        f"**复测**：测试集 ECE {t['test_ece_before']:.4f} → {t['test_ece_after']:.4f}，"
+        f"Brier {t['test_brier_before']:.4f} → {t['test_brier_after']:.4f}，"
+        f"平均预测 PD {t['test_mean_pd_before']:.3f} → {t['test_mean_pd_after']:.3f}"
+        f"（实际违约率 {t['observed_bad_rate']:.3f}）；AUC {t['test_auc_before']:.4f} → "
+        f"{t['test_auc_after']:.4f}（单调校准，排序能力保持）。{verdict}"
+    )
+
+
+def _repair_selection_table(calibration: dict) -> pd.DataFrame:
+    """择优过程表：三方（raw/sigmoid/isotonic）在验证段的 ECE 与 Brier。"""
+    sel = calibration["repair"]["selection"]
+    rows = [
+        {"candidate": "raw (uncalibrated)", "valid_ece": sel["ece_valid_raw"], "valid_brier": sel["brier_valid_raw"]},
+        {"candidate": "sigmoid (platt)", "valid_ece": sel["ece_valid_sigmoid"], "valid_brier": sel["brier_valid_sigmoid"]},
+        {"candidate": "isotonic", "valid_ece": sel["ece_valid_isotonic"], "valid_brier": sel["brier_valid_isotonic"]},
+    ]
+    table = pd.DataFrame(rows)
+    table["selected"] = ["", "✔" if calibration["repair"]["method"] == "sigmoid" else "",
+                         "✔" if calibration["repair"]["method"] == "isotonic" else ""]
+    return table
+
+
+def _repair_test_table(t: dict) -> pd.DataFrame:
+    """测试集校准前后对比表：ECE/Brier/平均 PD/AUC/实际违约率。"""
+    return pd.DataFrame([
+        {"metric": "ECE ↓", "before": round(t["test_ece_before"], 4), "after": round(t["test_ece_after"], 4)},
+        {"metric": "Brier ↓", "before": round(t["test_brier_before"], 4), "after": round(t["test_brier_after"], 4)},
+        {"metric": "mean predicted PD", "before": round(t["test_mean_pd_before"], 4), "after": round(t["test_mean_pd_after"], 4)},
+        {"metric": "AUC（排序保持）", "before": round(t["test_auc_before"], 4), "after": round(t["test_auc_after"], 4)},
+    ])
 
 
 def _imbalance_conclusion(results: pd.DataFrame) -> str:

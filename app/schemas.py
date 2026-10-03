@@ -7,6 +7,8 @@
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from pydantic import BaseModel, Field, field_validator
 
 from creditrisk.config import CATEGORY_VALUES, NUM_FEATURES
@@ -56,6 +58,11 @@ class TopFeature(BaseModel):
 
 class ScoreResponse(BaseModel):
     probability_of_default: float = Field(..., ge=0.0, le=1.0)
+    probability_of_default_raw: Optional[float] = Field(
+        None, ge=0.0, le=1.0, description="校准前（原始模型）PD；未部署校准器时为 null"
+    )
+    calibrated: bool = Field(..., description="PD 是否经过概率校准（isotonic/sigmoid）")
+    calibration_method: str = Field(..., description="校准方法：isotonic / sigmoid / none")
     risk_band: str
     top_features: list[TopFeature]
     model_version: str

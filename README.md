@@ -10,7 +10,7 @@ SHAP 可解释性与 FastAPI 评分服务。
 ![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/pytest-95%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/pytest-109%20passed-brightgreen)
 
 ---
 
@@ -25,9 +25,11 @@ flowchart LR
     E --> F[可解释性<br/>SHAP 全局 + 单样本<br/>coef×WOE 线性归因]
     E --> G[稳定性<br/>自实现 PSI<br/>train vs test + 漂移注入]
     E --> T[阈值-业务分析<br/>批准率 / 坏账率]
+    E --> R[校准修复<br/>OOF held-out 上<br/>Platt vs isotonic 择优]
     T --> H
-    F --> H[部署<br/>FastAPI /score<br/>PD + 风险分档 + top 特征解释]
+    F --> H[部署<br/>FastAPI /score + Streamlit Demo<br/>校准后 PD + 风险分档 + top 解释]
     G --> H
+    R --> H
 ```
 
 ## 快速开始
@@ -40,7 +42,7 @@ pip install -r requirements.txt
 python scripts/run_eda.py
 python scripts/run_training.py
 
-# 3. 全量测试（95 个）
+# 3. 全量测试（109 个）
 python -m pytest tests
 
 # 4. 启动评分服务
@@ -69,7 +71,7 @@ curl -X POST http://127.0.0.1:8000/score -H "Content-Type: application/json" -d 
 | 目标定义 | `class: bad→1（违约）`，正类 = 违约；坏样本率 30.0% |
 | 切分 | 分层 train/test = 800/200（seed=42），CV 为 5 折分层 |
 | 特征处理 | 自实现 WOE 分位数分箱编码（加法平滑 α=0.5，缺失/未见值映射中性 0） |
-| 部署模型 | **LogisticRegression + class_weight="balanced"**（版本 1.0.0） |
+| 部署模型 | **LogisticRegression + class_weight="balanced" + sigmoid 校准**（版本 1.0.0） |
 | 训练环境 | Python 3.10.9 / scikit-learn 1.7.2 / LightGBM 4.6.0 / SHAP 0.49.1 |
 
 ### 真实评估指标（scripts/run_training.py 实跑产出，见 artifacts/metrics.json）
@@ -115,23 +117,52 @@ CV AUC 差距仅 0.0012（LR）/ 0.0009（LightGBM），SMOTE 未带来可辨识
   duration 升至 **3.14**、credit_amount 升至 **0.50**，验证 PSI 实现确实能检出漂移
   （见 [reports/stability_report.md](reports/stability_report.md)）。
 
-### 概率校准（Brier / ECE / 可靠性曲线）
+### 概率校准（发现 → 修复 → 复测）
 
 排序指标（AUC/KS）不约束 PD 的绝对值；AUC=0.80 不代表"预测 PD=0.6 的群组真有 60% 违约率"。
 等频 10 桶可靠性分析（独立测试集 n=200，scripts/run_training.py 实跑产出）：
 
+**① 发现（修复前的量化记录，保留原始数字）**
+
 | 模型 | Brier ↓ | ECE ↓ | 平均预测 PD | 实际违约率 |
 |---|---|---|---|---|
-| **部署：LR + weight** | 0.1810 | 0.1420 | 0.437 | 0.300 |
-| 参照：LR + none（不加权） | **0.1574** | **0.0505** | 0.301 | 0.300 |
+| 部署：LR + weight（校准前） | 0.1810 | 0.1420 | 0.437 | 0.300 |
+| 参照：LR + none（不加权） | 0.1574 | 0.0505 | 0.301 | 0.300 |
 
-**结论**：`class_weight="balanced"` 在排序能力几乎不变的前提下（test AUC 0.8013 vs 0.8004），
+`class_weight="balanced"` 在排序能力几乎不变的前提下（test AUC 0.8013 vs 0.8004），
 把预测 PD 的绝对值系统性抬高约 **+0.137**（ECE 0.142 vs 参照 0.051）——
-部署模型的 PD **不能**直接当作真实违约概率用于定价或资本计算；
-风险分档阈值基于 PD 相对排序，不受此偏移影响。
-可靠性曲线见 [reports/calibration_curve.png](reports/calibration_curve.png)，
-逐桶数据见 [reports/calibration_table.csv](reports/calibration_table.csv)
+校准前的 PD 不能直接当作真实违约概率用于定价或资本计算。
+
+**② 修复（OOF held-out 校准，sigmoid vs isotonic 择优）**
+
+`src/creditrisk/calibration_repair.py`：训练集 5 折分层 CV 产出每条样本的 held-out
+（out-of-fold）预测概率 → OOF 分层切两半，在 sel_fit（n=400）上分别拟合
+Platt scaling（sigmoid）与 isotonic，在 sel_val（n=400）上对比 ECE 择优；
+择优者用全部 OOF（n=800）重拟合为部署校准器。测试集只做单调变换，**绝不参与校准器拟合**。
+
+| 候选（验证段 n=400） | ECE ↓ | Brier ↓ |
+|---|---|---|
+| raw（未校准） | 0.1254 | 0.1963 |
+| **sigmoid（选中）** | **0.0699** | **0.1822** |
+| isotonic | 0.0772 | 0.1831 |
+
+**③ 复测（独立测试集 n=200，校准前 → 校准后）**
+
+| 指标 | 校准前 | 校准后 |
+|---|---|---|
+| ECE ↓ | 0.1420 | **0.0681** |
+| Brier ↓ | 0.1810 | **0.1591** |
+| 平均预测 PD | 0.437 | **0.301**（实际违约率 0.300，偏差 +0.001） |
+| AUC（排序保持） | 0.8013 | 0.8013 |
+
+校准器为 sigmoid：PD_calibrated = σ(a·logit(PD_raw)+b)，a=0.758，b=-0.788（严格单调，
+排序能力逐分不变，风险分档归属不受影响）。测试集仅 200 条，逐桶读数仍有抽样噪声，
+复测结论以全量指标为准。可靠性曲线（校准前/后/参照三组并排）见
+[reports/calibration_curve.png](reports/calibration_curve.png)，逐桶数据见
+[reports/calibration_table.csv](reports/calibration_table.csv)
 （完整表亦写入 reports/training_report.md 与 artifacts/metrics.json 的 `calibration` 字段）。
+含校准器的部署 bundle 见 artifacts/deploy_bundle.joblib（模型 + 校准器 + 特征 schema 元数据），
+API 与 Streamlit Demo 均从 bundle 加载。
 
 ### 阈值-业务指标（批准率 / 坏账率）
 
@@ -154,19 +185,21 @@ CV AUC 差距仅 0.0012（LR）/ 0.0009（LightGBM），SMOTE 未带来可辨识
 
 - `POST /score`：20 特征 JSON（Pydantic v2 强校验：类别取值白名单，非法值 422；
   数值不硬拒，WOE 越界裁剪到边界箱）→
-  `{probability_of_default, risk_band, top_features[3], model_version, model, explanation_method}`；
-- 风险分档阈值取测试集 PD 的 60%/85% 分位：low < 0.506 ≤ medium < 0.792 ≤ high；
+  `{probability_of_default（校准后 PD）, probability_of_default_raw（校准前参照）, calibrated, calibration_method, risk_band, top_features[3], model_version, model, explanation_method}`；
+- PD 输出为**校准后概率**（sigmoid），平均预测 PD 0.301 vs 实际违约率 0.300（见「概率校准」③）；
+- 风险分档阈值取测试集校准后 PD 的 60%/85% 分位：low < 0.317 ≤ medium < 0.556 ≤ high
+  （与校准前尺度 0.506/0.792 在排序意义下一一对应）；
 - `GET /health`：版本与训练时间。API 测试 9 个（tests/test_api.py）。
 
 ## 项目结构
 
 ```
 credit-risk-modeling/
-├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / thresholds / models / explain / eda
-├── app/                   # FastAPI 服务（schemas + main）
+├── src/creditrisk/        # 核心库：data / woe / psi / evaluate / calibration / calibration_repair / thresholds / models / explain / eda
+├── app/                   # FastAPI 服务（schemas + main，加载部署 bundle）
 ├── scripts/               # run_eda.py / run_training.py / 检查脚本
-├── tests/                 # 95 个 pytest（单元 + API 契约）
-├── artifacts/             # pipeline.joblib + model_meta.json + metrics.json（随仓库提交）
+├── tests/                 # 109 个 pytest（单元 + API 契约）
+├── artifacts/             # pipeline.joblib + deploy_bundle.joblib（模型+校准器+schema 元数据）+ model_meta.json + metrics.json（随仓库提交）
 ├── reports/               # EDA/训练/稳定性报告与图表（随仓库提交）
 ├── data/raw/credit-g.csv  # OpenML 拉取后的本地缓存（随仓库提交，离线可复现）
 └── .github/workflows/ci.yml
@@ -199,11 +232,18 @@ credit-risk-modeling/
    `joblib.load` 仅加载本仓库训练脚本产出的第一方产物，生产应改用带签名的模型注册中心。
 7. **SHAP 输出版本敏感**：不同 shap 版本对二分类 TreeExplainer 的返回结构不同，
    `explain.py` 已做多版本兼容分支，但升级 shap 大版本后需回归 `tests/test_explain.py`。
-8. **PD 绝对值未做校准修正**：balanced 加权使部署模型预测 PD 系统性偏高
-   （平均 0.437 vs 实际 0.300，ECE 0.142 vs 未加权参照 0.051，见「概率校准」一节）。
-   本项目如实量化了该偏移但**未实现** Platt/isotonic 修正；需要绝对 PD 的场景
-   （定价、拨备、监管资本）应先在验证集上做校准修正，或直接部署未加权模型
-   （排序损失约 0.001 AUC，可自行权衡）。
+8. **PD 校准偏移：已发现并修复，残余偏差如实记录**：
+   - **曾发现**：balanced 加权使部署模型 PD 系统性偏高——平均预测 0.437 vs 实际 0.300
+     （偏移 +0.137），ECE 0.142 vs 未加权参照 0.051（发现过程见「概率校准」①），
+     当时项目如实量化了偏移但未做修正；
+   - **已修复**：新增校准修正层（src/creditrisk/calibration_repair.py）——在训练集 OOF
+     held-out 预测上拟合 Platt(sigmoid) 与 isotonic，按验证段 ECE 择优（sigmoid 胜出：
+     0.0699 vs 0.0772），全部 OOF 重拟合后作为部署校准器，测试集绝不参与拟合；
+   - **复测**：测试集 ECE 0.1420 → 0.0681，Brier 0.1810 → 0.1591，平均预测 PD
+     0.437 → 0.301（实际 0.300，偏差收窄至 +0.001），AUC 0.8013 保持不变
+     （单调校准，排序无损）。残余限制：测试集仅 200 条，逐桶可靠性读数仍有抽样噪声；
+     校准基于同一时期数据，组合迁徙（population shift）后需重新校准——
+     需要 PD 绝对值的场景（定价、拨备、监管资本）上线前应在更大数据上复验。
 9. **阈值-业务分析为描述性扫描**：批准率/坏账率表未引入利润或损失矩阵，不构成
    阈值最优化建议；且测试集仅 200 条、每档约 20 样本，坏账率读数对单样本波动
    敏感（±1 个坏样本 ≈ ±5 个百分点），不能当作稳定业务参数外推。

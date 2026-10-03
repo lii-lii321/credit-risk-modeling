@@ -123,8 +123,20 @@
     ]
   },
   "risk_band_thresholds": {
+    "low_below": 0.31673603083024254,
+    "medium_below": 0.5560287638934395
+  },
+  "risk_band_thresholds_raw_pd": {
     "low_below": 0.5063200128288048,
     "medium_below": 0.7919167612214701
+  },
+  "calibration": {
+    "applied": true,
+    "method": "sigmoid",
+    "test_ece_before": 0.142035668604659,
+    "test_ece_after": 0.0681398388820464,
+    "test_brier_before": 0.18102244664804076,
+    "test_brier_after": 0.15907862555097094
   },
   "test_metrics": {
     "auc": 0.8013095238095239,
@@ -134,7 +146,7 @@
     "bad_rate": 0.3
   },
   "global_importance_method": "shap_mean_abs(lightgbm+weight)",
-  "trained_at": "2026-10-03 00:54:23",
+  "trained_at": "2026-10-03 23:36:33",
   "library_versions": {
     "scikit-learn": "1.7.2",
     "lightgbm": "4.6.0",
