@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from creditrisk.html_report import (
@@ -179,6 +180,26 @@ def test_render_with_missing_inputs_degrades_honestly(tmp_path, mini_metrics):
     assert "nan" not in html.lower() and "None" not in html
     assert "已知限制" in html                          # 降级提示仍指回 README
     assert "synthetic_fallback" not in html           # 不虚构数据来源
+    assert "稳定性表略" in html                       # 缺 PSI 产物如实省略整块
+
+
+def test_render_psi_table_from_reports_dir(tmp_path, mini_metrics):
+    """reports/ 里有 PSI CSV 时，②节渲染 top-8 稳定性表与判定文案。"""
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    pd.DataFrame([
+        {"feature": "age", "psi": 0.0123, "level": "stable"},
+        {"feature": "credit_amount", "psi": 0.31, "level": "significant"},
+    ]).to_csv(reports_dir / "psi_train_vs_test.csv", index=False)
+    out = tmp_path / "report.html"
+    render_html_report(mini_metrics, reports_dir, out)
+    html = out.read_text(encoding="utf-8")
+
+    assert "特征稳定性（自实现 PSI，train vs test）" in html
+    assert "特征（PSI 最高前 8）" in html
+    assert "age" in html and "credit_amount" in html
+    assert "稳定（&lt;0.1）" in html and "显著漂移（&gt;0.25）" in html
+    assert "0.3100" in html and "0.0123" in html
 
 
 def test_extract_readme_limitations_parses_numbered_items_and_merges_wrapped_lines():
@@ -208,6 +229,9 @@ def test_rerender_from_real_artifacts(tmp_path):
     assert "16.4%" in html and "相对下降 34%" in html
     # 已知限制与 README 同步（首条标题）
     assert "数据规模与年代" in html
+    # ②节渲染真实 PSI 稳定性表（reports/psi_train_vs_test.csv 已提交）
+    assert "特征稳定性（自实现 PSI，train vs test）" in html
+    assert "特征（PSI 最高前 8）" in html
     # 自包含：两张真实图表内嵌，无外链
     assert html.count('src="data:image/png;base64,') == 2
     assert "https://" not in html and "<script" not in html.lower()

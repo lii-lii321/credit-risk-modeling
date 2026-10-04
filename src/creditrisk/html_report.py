@@ -1,7 +1,7 @@
 """一页式 HTML 训练报告渲染器（单文件自包含、纯静态、零 JS、零外网资源）。
 
 把训练全链路聚合为单页 reports/report.html，章节顺序固定：
-①数据概况 ②特征工程摘要（WOE/IV） ③模型对比（LR vs LightGBM）
+①数据概况 ②特征工程摘要（WOE/IV + PSI 稳定性表） ③模型对比（LR vs LightGBM）
 ④校准：发现→修复→复测 ⑤阈值-业务扫描 ⑥公平性审计 ⑦已知限制（从 README 同步）。
 
 数据纪律（军规）：
@@ -43,6 +43,11 @@ _STRENGTH_LABELS = {
     "medium": "中（0.1–0.3）",
     "strong": "强（0.3–0.5）",
     "suspicious": "可疑（>0.5，需人工复核）",
+}
+_PSI_LEVELS = {
+    "stable": "稳定（<0.1）",
+    "moderate": "中度漂移（0.1–0.25）",
+    "significant": "显著漂移（>0.25）",
 }
 
 # ---------------------------------------------------------------- primitives
@@ -231,6 +236,31 @@ def _section_features(reports_dir: Path) -> str:
         parts.append('<p class="note">完整 20 特征 IV 表见 reports/iv_table.csv。</p>')
     else:
         parts.append('<p class="note">reports/iv_table.csv 缺失，IV 表略。</p>')
+
+    psi_path = reports_dir / "psi_train_vs_test.csv"
+    if psi_path.is_file():
+        psi = pd.read_csv(psi_path)
+        mx = float(psi["psi"].max())
+        verdict = "全部 &lt;0.1，同分布随机切分符合预期" if mx < 0.1 else "存在漂移特征，上线前需复核"
+        rows = [
+            (_esc(r["feature"]), _num(r["psi"]),
+             _esc(_PSI_LEVELS.get(str(r["level"]), str(r["level"]))))
+            for _, r in psi.head(8).iterrows()
+        ]
+        parts.append(
+            f'<p><strong>特征稳定性（自实现 PSI，train vs test）</strong>：'
+            f"最大 PSI {_num(mx)} → {verdict}。</p>"
+        )
+        parts.append(_table(["特征（PSI 最高前 8）", "PSI", "经验评级"], rows))
+        parts.append(
+            '<p class="note">PSI = Σ (actual%−expected%)·ln(actual%/expected%)：'
+            "数值特征按 expected 分位数等频 10 箱、类别特征按取值并集对齐，零比例以 ε=1e-4 截断；"
+            "含缺失值独立成箱。完整 20 特征表与人为漂移对照实验（age+15 / credit_amount×1.5 / "
+            "duration+12，应检出显著漂移）见 reports/psi_train_vs_test.csv 与 "
+            "reports/stability_report.md。</p>"
+        )
+    else:
+        parts.append('<p class="note">reports/psi_train_vs_test.csv 缺失，稳定性表略。</p>')
     return "\n".join(parts)
 
 
@@ -307,7 +337,7 @@ def _section_models(metrics: dict, reports_dir: Path) -> str:
         verdict = "全部 &lt;0.1，同分布切分符合预期" if mx < 0.1 else "存在特征漂移，需复核"
         parts.append(
             f'<p class="note">稳定性（自实现 PSI，train vs test）：最大 PSI {mx:.4f} → {verdict}'
-            "（见 reports/stability_report.md）。</p>"
+            "（表见第②节，完整报告见 reports/stability_report.md）。</p>"
         )
     local = metrics.get("local_example") or {}
     if local.get("top_features"):
