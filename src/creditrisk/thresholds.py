@@ -96,8 +96,13 @@ def plot_tradeoff_curves(y_true, y_proba, thresholds, out_path: Path) -> Path:
     ax_right.set_ylabel("Default rate")
     ax.set_title("Threshold vs approval rate / default rate")
     lines = line_approval + line_approved + line_rejected
-    # matplotlib 类型桩把 Artist.get_label() 标为 object（运行时恒为 str），豁免 legend labels 的 List[str] 校验
-    ax.legend(lines, [line.get_label() for line in lines], loc="center right", fontsize=9)  # type: ignore[misc]
+    # matplotlib 类型桩把 Artist.get_label() 标为 object（运行时恒为 str），故豁免 misc；
+    # lint 环境无 matplotlib 时该行为 Any，双码豁免 unused-ignore 以兼容有桩/无桩两种环境
+    ax.legend(
+        lines,
+        [line.get_label() for line in lines],  # type: ignore[misc, unused-ignore]
+        loc="center right", fontsize=9,
+    )
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
