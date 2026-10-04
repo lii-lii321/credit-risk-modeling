@@ -63,7 +63,7 @@ def reliability_data(y_true, y_proba, n_bins: int = 10) -> pd.DataFrame:
     quantiles = np.quantile(p, np.linspace(0.0, 1.0, n_bins + 1))
     edges = np.unique(quantiles)  # 并列概率会使边界塌缩
     if len(edges) < 2:  # 所有概率相同 → 单桶
-        bin_id = np.zeros(len(p), dtype=int)
+        bin_id: np.ndarray = np.zeros(len(p), dtype=int)
     else:
         # side="right"−1：样本落入最后一个 ≤ 自身的边界桶；最大值裁剪进末桶
         bin_id = np.clip(np.searchsorted(edges, p, side="right") - 1, 0, len(edges) - 2)

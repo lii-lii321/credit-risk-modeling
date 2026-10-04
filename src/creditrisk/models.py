@@ -10,6 +10,8 @@ PSI/SHAP 解释口径一致。评估：5 折分层 CV 的 AUC/KS + 独立测试�
 """
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
@@ -24,7 +26,7 @@ from .woe import WoEEncoder
 MODEL_NAMES = ["logistic_regression", "lightgbm"]
 IMBALANCE_STRATEGIES = ["none", "weight", "smote"]
 
-LGBM_PARAMS = dict(
+LGBM_PARAMS: dict[str, Any] = dict(
     n_estimators=300,
     learning_rate=0.05,
     num_leaves=31,
@@ -41,7 +43,7 @@ def make_estimator(model_name: str, strategy: str):
     if strategy not in IMBALANCE_STRATEGIES:
         raise ValueError(f"未知不平衡策略: {strategy}")
     if model_name == "logistic_regression":
-        params = dict(max_iter=5000, random_state=RANDOM_STATE)
+        params: dict[str, Any] = dict(max_iter=5000, random_state=RANDOM_STATE)
         if strategy == "weight":
             params["class_weight"] = "balanced"
         return LogisticRegression(**params)

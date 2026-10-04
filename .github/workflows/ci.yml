@@ -13,10 +13,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install ruff and mypy
+        run: pip install ruff mypy
       - name: Ruff static check
         run: ruff check .
+      - name: Mypy type check
+        run: python -m mypy src/creditrisk
 
   test:
     runs-on: ubuntu-latest

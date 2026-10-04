@@ -13,7 +13,7 @@
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable
 from pathlib import Path
 
 import matplotlib
@@ -52,7 +52,7 @@ def tradeoff_table(y_true, y_proba, thresholds) -> pd.DataFrame:
 
 
 def thresholds_for_approval_rates(
-    y_true, y_proba, approval_targets: Sequence[float] = (0.7, 0.8, 0.9)
+    y_true, y_proba, approval_targets: Iterable[float] = (0.7, 0.8, 0.9)
 ) -> pd.DataFrame:
     """按目标批准率反查阈值：threshold = PD 的 target 分位数，附实际达成口径。
 
@@ -96,7 +96,8 @@ def plot_tradeoff_curves(y_true, y_proba, thresholds, out_path: Path) -> Path:
     ax_right.set_ylabel("Default rate")
     ax.set_title("Threshold vs approval rate / default rate")
     lines = line_approval + line_approved + line_rejected
-    ax.legend(lines, [line.get_label() for line in lines], loc="center right", fontsize=9)
+    # matplotlib 类型桩把 Artist.get_label() 标为 object（运行时恒为 str），豁免 legend labels 的 List[str] 校验
+    ax.legend(lines, [line.get_label() for line in lines], loc="center right", fontsize=9)  # type: ignore[misc]
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()

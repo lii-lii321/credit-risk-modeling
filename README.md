@@ -10,7 +10,7 @@ SHAP 可解释性与 FastAPI 评分服务。
 ![CI](https://github.com/lii-lii321/credit-risk-modeling/actions/workflows/ci.yml/badge.svg)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/pytest-137%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/pytest-150%20passed-brightgreen)
 
 ![demo](docs/demo.gif)
 
@@ -47,6 +47,7 @@ python scripts/run_training.py
 # 3. 全量测试（150 个）与静态检查
 python -m pytest tests
 ruff check .   # CI lint 门禁（E/F/W/I/B/UP，行宽 120）
+python -m mypy src/creditrisk   # CI 类型检查门禁（check_untyped_defs 起步，ML 缺桩包 ignore_missing_imports）
 
 # 4. 启动评分服务
 uvicorn app.main:app --port 8000
@@ -361,3 +362,9 @@ credit-risk-modeling/
 ## License
 
 [MIT](LICENSE)
+
+## 同系列作品
+
+- 作品集门户：[lii-lii321.github.io/portfolio](https://lii-lii321.github.io/portfolio/)
+- [llm-eval-kit](https://github.com/lii-lii321/llm-eval-kit) —— 离线可跑的 RAG 检索与 LLM 应用评测工具库：合成评测集 / 检索指标 / LLM-as-judge / badcase 归因 / Markdown+HTML 报告（同样接入 ruff + mypy 双静态门禁）
+- [jd-resume-matcher](https://github.com/lii-lii321/jd-resume-matcher) —— JD-resume structured matching and interpreter: offline rule extraction + weighted scoring with evidence-traceable reasons

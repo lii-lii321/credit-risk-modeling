@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import matplotlib
 
@@ -102,7 +103,7 @@ def plot_numeric_correlation(X: pd.DataFrame, out_dir: Path) -> Path:
 
 def run_eda(df: pd.DataFrame, out_dir: Path | None = None) -> dict:
     """完整 EDA：生成全部图表并返回关键统计量（供 summary/README 引用）。"""
-    out_dir = Path(out_dir)
+    out_dir = Path(out_dir)  # type: ignore[arg-type]  # 签名保留 None 默认占位，Path(None) 原有报错行为不变
     X, y = df.drop(columns=[TARGET_COL]), df[TARGET_COL]
 
     paths = {
@@ -113,7 +114,7 @@ def run_eda(df: pd.DataFrame, out_dir: Path | None = None) -> dict:
         "correlation": plot_numeric_correlation(X, out_dir),
     }
 
-    stats = {
+    stats: dict[str, Any] = {
         "n_rows": int(len(df)),
         "n_features": int(X.shape[1]),
         "bad_rate": float(y.mean()),

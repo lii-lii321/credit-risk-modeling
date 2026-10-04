@@ -14,5 +14,17 @@ extend-exclude = ["artifacts", "reports", "build", "data"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
 
+[tool.mypy]
+# 门禁基线对齐 llm-eval-kit（非 strict，check_untyped_defs 起步）；
+# ML 生态（shap / imbalanced-learn / lightgbm 等部分包无类型桩）统一 ignore_missing_imports，
+# 待上游补桩后可改为 per-module 覆盖逐步收紧
+python_version = "3.10"
+files = ["src/creditrisk"]
+ignore_missing_imports = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
 [tool.coverage.run]
 source = ["src/creditrisk"]
