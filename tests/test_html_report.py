@@ -202,6 +202,22 @@ def test_render_psi_table_from_reports_dir(tmp_path, mini_metrics):
     assert "0.3100" in html and "0.0123" in html
 
 
+def test_render_scorecard_section_when_metrics_present(tmp_path, mini_metrics):
+    """metrics 带 scorecard 时⑤节渲染标度表；缺 key 的降级路径由其余用例隐式覆盖。"""
+    mini_metrics["scorecard"] = {
+        "pdo": 20.0, "base_odds": 50.0, "base_score": 600.0,
+        "n": 2, "min": 512.3, "max": 640.7, "mean": 576.5, "median": 576.5,
+    }
+    out = tmp_path / "report.html"
+    render_html_report(mini_metrics, tmp_path / "no_such_reports", out)
+    html = out.read_text(encoding="utf-8")
+
+    assert "信用分标度（Scorecard，PD 的单调刻度变换）" in html
+    assert "640.7" in html and "512.3" in html
+    assert "50 : 1 → 600 分" in html
+    assert "不改变排序、不改变阈值决策" in html
+
+
 def test_extract_readme_limitations_parses_numbered_items_and_merges_wrapped_lines():
     items = extract_readme_limitations(README_MINI)
     assert len(items) == 2

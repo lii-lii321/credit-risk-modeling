@@ -473,6 +473,27 @@ def _section_thresholds(metrics: dict, reports_dir: Path) -> str:
             '<p class="note">描述性扫描，未引入利润/损失矩阵，不构成阈值最优化建议；'
             "测试集样本有限，最细分档坏账率对单样本波动敏感。</p>"
         )
+
+    # 信用分标度：metrics 有该字段才渲染（缺失时如实省略整块，不虚构）
+    sc = metrics.get("scorecard") or {}
+    if sc:
+        parts.append("<p><strong>信用分标度（Scorecard，PD 的单调刻度变换）</strong></p>")
+        sc_rows = [
+            ("PDO（odds 翻倍所需分数）", _num(sc.get("pdo"), ".0f")),
+            ("基准 odds（正常:违约）→ 基准分",
+             f"{_num(sc.get('base_odds'), '.0f')} : 1 → {_num(sc.get('base_score'), '.0f')} 分"),
+            ("测试集分数范围",
+             f"{_num(sc.get('min'), '.1f')} ~ {_num(sc.get('max'), '.1f')}"
+             f"（n={_num(sc.get('n'), '.0f')}）"),
+            ("中位 / 均值", f"{_num(sc.get('median'), '.1f')} / {_num(sc.get('mean'), '.1f')}"),
+        ]
+        parts.append(_table(["参数 / 统计", "取值"], sc_rows))
+        parts.append(
+            '<p class="note">score = Offset + (PDO/ln2)·ln((1−PD)/PD)，基准 odds 落在基准分，'
+            "PD 越低分数越高。与校准后 PD 一一对应的单调变换：不改变排序、不改变阈值决策，"
+            "仅把概率量纲翻译成业务方习惯的分数量纲；参数已写入 artifacts/model_meta.json。</p>"
+        )
+
     img = _img_src(reports_dir / "threshold_tradeoff.png")
     if img:
         parts.append('<img class="figure" alt="threshold trade-off curves" src="' + img + '">')

@@ -74,6 +74,12 @@ from creditrisk.models import (  # noqa: E402
     select_best,
 )
 from creditrisk.psi import psi_table  # noqa: E402
+from creditrisk.scorecard import (  # noqa: E402
+    DEFAULT_BASE_ODDS,
+    DEFAULT_BASE_SCORE,
+    DEFAULT_PDO,
+    scorecard_summary,
+)
 from creditrisk.thresholds import (  # noqa: E402
     plot_tradeoff_curves,
     thresholds_for_approval_rates,
@@ -229,6 +235,14 @@ def main() -> None:
     log("阈值-业务指标（目标批准率 70/80/90%）：")
     log(tradeoff_targets.to_string(index=False))
 
+    # -------------------------------------------------- scorecard scale
+    # 信用分标度：校准后 PD 的单调刻度变换（score = Offset + (PDO/ln2)·ln(odds)），
+    # 基准 odds=50:1 落在 600 分、PDO=20。只翻译量纲，不改排序与任何阈值决策。
+    score_stats = scorecard_summary(calibrated_test_proba)
+    log(f"信用分标度：测试集分数 {score_stats['min']:.1f} ~ {score_stats['max']:.1f}"
+        f"（中位 {score_stats['median']:.1f}；PDO={DEFAULT_PDO:.0f}，"
+        f"base_odds={DEFAULT_BASE_ODDS:.0f}:1 → base_score={DEFAULT_BASE_SCORE:.0f}）")
+
     # ------------------------------------------------------- fairness audit
     # 公平性审计（描述性，只测量不修正）：在测试集（n=200，复用训练管线现有切分
     # 与预测，不重新建模）上按 personal_status（含性别编码）分组，统计部署阈值
@@ -323,6 +337,7 @@ def main() -> None:
         "final_test_metrics": final_metrics,
         "calibration": calibration,
         "threshold_tradeoff": threshold_tradeoff,
+        "scorecard": score_stats,
         "fairness": fairness,
         "fairness_sensitivity": fairness_sens,
         "global_importance_method": shap_method,
@@ -351,6 +366,11 @@ def main() -> None:
         "category_values": CATEGORY_VALUES,
         "risk_band_thresholds": {"low_below": float(t_low), "medium_below": float(t_high)},
         "risk_band_thresholds_raw_pd": {"low_below": float(t_low_raw), "medium_below": float(t_high_raw)},
+        "scorecard": {
+            "pdo": float(DEFAULT_PDO),
+            "base_odds": float(DEFAULT_BASE_ODDS),
+            "base_score": float(DEFAULT_BASE_SCORE),
+        },
         "calibration": {
             "applied": True,
             "method": calibration_method,
